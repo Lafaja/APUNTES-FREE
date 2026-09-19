@@ -1,4 +1,4 @@
-﻿const state = {
+const state = {
   currentView: 'file-manager',
   currentFolderId: null,
   folders: [],
@@ -348,130 +348,12 @@ function updateAllMeasurementLabels() {
 
 // Sembrar datos simulados de carpetas y apuntes iniciales
 async function seedInitialDemoData() {
-  try {
-    const folders = await dbGetFolders();
-    const items = await dbGetItems();
-    if (folders.length > 0 || items.length > 0) return;
-
-    // Carpetas iniciales temáticas
-    const fUni = await dbCreateFolder('📚 Universidad e Ingeniería', '#3b82f6', null);
-    const fWork = await dbCreateFolder('💼 Proyectos & Trabajo', '#10b981', null);
-    const fArt = await dbCreateFolder('🎨 Bocetos & Ideas', '#a855f7', null);
-
-    // Apunte 1 (En raíz): Bienvenida y Guía
-    const note1 = {
-      id: `note_welcome_${Date.now()}`,
-      name: '📝 Bienvenido a Tablet Studio',
-      parentId: null,
-      type: 'note',
-      paperSize: 'a4',
-      orientation: 'portrait',
-      noteMode: 'continuous',
-      bgColor: '#fdf6e2',
-      patternType: 'grid',
-      gridSize: 28,
-      pageHeight: 1188,
-      canvasWidth: 840,
-      canvasHeight: 1188,
-      strokes: [
-        {
-          id: 'st_1',
-          tool: 'pen',
-          brushType: 'pen',
-          color: '#2563eb',
-          size: 4,
-          opacity: 1,
-          points: [
-            { x: 120, y: 120, pressure: 0.8 }, { x: 180, y: 120, pressure: 0.85 }, { x: 350, y: 120, pressure: 0.9 }
-          ]
-        },
-        {
-          id: 'st_2',
-          tool: 'highlighter',
-          brushType: 'highlighter',
-          color: '#facc15',
-          size: 20,
-          opacity: 0.45,
-          points: [
-            { x: 110, y: 125, pressure: 0.5 }, { x: 360, y: 125, pressure: 0.5 }
-          ]
-        }
-      ],
-      createdAt: Date.now() - 3600000 * 24,
-      updatedAt: Date.now() - 3600000 * 2
-    };
-    await dbSaveItem(note1);
-
-    // Apunte 2 (En Universidad): Fórmulas y Matemáticas
-    const note2 = {
-      id: `note_math_${Date.now()}`,
-      name: '📐 Fórmulas y Matemáticas',
-      parentId: fUni.id,
-      type: 'note',
-      paperSize: 'a4',
-      orientation: 'portrait',
-      noteMode: 'continuous',
-      bgColor: '#ffffff',
-      patternType: 'grid',
-      gridSize: 28,
-      pageHeight: 1188,
-      canvasWidth: 840,
-      canvasHeight: 1188,
-      strokes: [],
-      createdAt: Date.now() - 3600000 * 12,
-      updatedAt: Date.now() - 3600000 * 4
-    };
-    await dbSaveItem(note2);
-
-    // Apunte 3 (En Proyectos): Plan de Trabajo
-    const note3 = {
-      id: `note_work_${Date.now()}`,
-      name: '📋 Plan de Trabajo Semanal',
-      parentId: fWork.id,
-      type: 'note',
-      paperSize: 'a4',
-      orientation: 'portrait',
-      noteMode: 'continuous',
-      bgColor: '#f8fafc',
-      patternType: 'lines',
-      gridSize: 32,
-      pageHeight: 1188,
-      canvasWidth: 840,
-      canvasHeight: 1188,
-      strokes: [],
-      createdAt: Date.now() - 3600000 * 6,
-      updatedAt: Date.now() - 3600000 * 1
-    };
-    await dbSaveItem(note3);
-
-    // Apunte 4 (En Bocetos): Lienzo Libre Infinito
-    const note4 = {
-      id: `note_sketch_${Date.now()}`,
-      name: '✨ Bocetos Libres (Infinito)',
-      parentId: fArt.id,
-      type: 'note',
-      paperSize: 'infinite',
-      orientation: 'portrait',
-      noteMode: 'infinite',
-      bgColor: '#1e293b',
-      patternType: 'dots',
-      gridSize: 28,
-      pageHeight: 2500,
-      canvasWidth: 2500,
-      canvasHeight: 2500,
-      strokes: [],
-      createdAt: Date.now() - 3600000 * 3,
-      updatedAt: Date.now() - 3600000 * 1
-    };
-    await dbSaveItem(note4);
-  } catch (e) {
-    console.warn('Error sembrando datos iniciales:', e);
-  }
+  // Sin archivos demo por código: el usuario comienza con un espacio 100% limpio y personalizado
 }
 
 // ===== 3. INICIALIZACIÓN DE LA APLICACIÓN =====
 async function bootstrapApp() {
-  // Paso 1: Carga de preferencias y vinculaciÃ³n INMEDIATA de eventos de todos los botones
+  // Paso 1: Carga de preferencias y vinculación INMEDIATA de eventos de todos los botones
   try {
     loadUserPreferences();
     initThemeSystem();
@@ -498,10 +380,9 @@ async function bootstrapApp() {
     console.error('Error vinculando eventos UI iniciales:', uiErr);
   }
 
-  // Paso 2: InicializaciÃ³n asÃ­ncrona de base de datos y renderizado del gestor de archivos
+  // Paso 2: Inicialización asíncrona de base de datos y renderizado del gestor de archivos
   try {
     await initDatabase();
-    await seedInitialDemoData();
 
     try {
       state.deviceDirName = getLocalStorageData('tablet_device_dir_name', null);
