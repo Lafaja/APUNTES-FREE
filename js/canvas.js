@@ -1,4 +1,4 @@
-﻿// ===== 8. MOTOR DE DIBUJO, LAZO LIBRE, FORMAS Y RELLENO =====
+// ===== 8. MOTOR DE DIBUJO, LAZO LIBRE, FORMAS Y RELLENO =====
 function isPointInPolygon(p, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -242,7 +242,17 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
   }
 
   function getActiveContainer() {
-    if (containerElement && containerElement.isConnected) return containerElement;
+    const stack = canvas.closest('.pdf-pages-stack');
+    if (stack) return stack;
+    const notesCont = canvas.closest('.notes-container');
+    if (notesCont) return notesCont;
+    if (containerElement && containerElement.isConnected) {
+      const parentStack = containerElement.closest('.pdf-pages-stack, .notes-container');
+      if (parentStack) return parentStack;
+      if (!containerElement.classList.contains('pdf-page-wrapper')) {
+        return containerElement;
+      }
+    }
     const closestCont = canvas.closest('.notes-container, .pdf-continuous-container, .pdf-pages-stack, .split-pane-content');
     if (closestCont) return closestCont;
     if (state.currentView === 'pdf-editor') {
@@ -251,13 +261,31 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
     return document.getElementById('notes-container');
   }
 
+  function getCurrentDocZoom() {
+    const cont = getActiveContainer();
+    if (cont && cont.style.transform) {
+      const m = cont.style.transform.match(/scale\(\s*([0-9.]+)\s*\)/);
+      if (m && parseFloat(m[1])) {
+        return parseFloat(m[1]);
+      }
+    }
+    if (splitPane) {
+      return (splitPane === 'left' ? state.split.leftScale : state.split.rightScale) || 1.0;
+    }
+    const targetDoc = resolveTargetDoc();
+    if ((targetDoc && targetDoc.type === 'pdf') || state.currentView === 'pdf-editor') {
+      return (state.pdf && state.pdf.scale) || (targetDoc && targetDoc.viewport && targetDoc.viewport.zoom) || 1.0;
+    }
+    return (state.notes && state.notes.scale) || (targetDoc && targetDoc.viewport && targetDoc.viewport.zoom) || 1.0;
+  }
+
   // Rastreo de toques simultáneos para gestos de 2 dedos (Pinch-to-zoom y Paneo) y 1 dedo (deslizar con la mano)
   const activeTouches = new Map();
   let isPinchingOrPanning = false;
   let initialPinchDist = 0;
   let initialPinchZoom = 1.0;
   let lastPinchCenter = { x: 0, y: 0 };
-  let currentZoom = (state.notes && state.notes.scale) || 1.0;
+  let currentZoom = getCurrentDocZoom();
 
   let isSingleTouchPanning = false;
   let lastSingleTouchPos = { x: 0, y: 0 };
@@ -299,14 +327,35 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
   }
 
   function setViewportZoom(newZoom) {
-    currentZoom = Math.min(3.5, Math.max(0.5, newZoom));
+    currentZoom = Math.min(3.5, Math.max(0.4, newZoom));
     const cont = getActiveContainer();
     if (cont) {
       cont.style.transform = `scale(${currentZoom})`;
       cont.style.transformOrigin = 'top center';
     }
-    if (state.notes) {
-      state.notes.scale = currentZoom;
+    if (splitPane) {
+      if (typeof applyPaneZoom === 'function') {
+        applyPaneZoom(splitPane, currentZoom);
+      }
+      return;
+    }
+    const targetDoc = resolveTargetDoc();
+    if ((targetDoc && targetDoc.type === 'pdf') || state.currentView === 'pdf-editor') {
+      if (state.pdf) state.pdf.scale = currentZoom;
+      if (targetDoc) {
+        if (!targetDoc.viewport) targetDoc.viewport = {};
+        targetDoc.viewport.zoom = currentZoom;
+      }
+      const zoomText = document.getElementById('pdf-zoom-text');
+      if (zoomText) zoomText.textContent = `${Math.round(currentZoom * 100)}%`;
+    } else {
+      if (state.notes) state.notes.scale = currentZoom;
+      if (targetDoc) {
+        if (!targetDoc.viewport) targetDoc.viewport = {};
+        targetDoc.viewport.zoom = currentZoom;
+      }
+      const zoomText = document.getElementById('zoom-percentage');
+      if (zoomText) zoomText.textContent = `${Math.round(currentZoom * 100)}%`;
     }
   }
 
@@ -798,7 +847,8 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       const t1 = touches[0];
       const t2 = touches[1];
       initialPinchDist = Math.hypot(t2.x - t1.x, t2.y - t1.y) || 1;
-      initialPinchZoom = currentZoom;
+      initialPinchZoom = getCurrentDocZoom();
+      currentZoom = initialPinchZoom;
       lastPinchCenter = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
       return;
     }
@@ -1654,7 +1704,13 @@ function attachViewportTouchScroller(viewportEl) {
       isTouchPanning = false;
       const touches = Array.from(vpTouches.values());
       initDist = Math.hypot(touches[1].x - touches[0].x, touches[1].y - touches[0].y) || 1;
-      initZoom = (state.notes && state.notes.scale) || 1.0;
+      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
+      if (cont && cont.style.transform) {
+        const m = cont.style.transform.match(/scale\(\s*([0-9.]+)\s*\)/);
+        initZoom = m && parseFloat(m[1]) ? parseFloat(m[1]) : ((state.currentView === 'pdf-editor' ? (state.pdf && state.pdf.scale) : (state.notes && state.notes.scale)) || 1.0);
+      } else {
+        initZoom = (state.currentView === 'pdf-editor' ? (state.pdf && state.pdf.scale) : (state.notes && state.notes.scale)) || 1.0;
+      }
       lastCenter = { x: (touches[0].x + touches[1].x) / 2, y: (touches[0].y + touches[1].y) / 2 };
       return;
     }
@@ -1687,13 +1743,29 @@ function attachViewportTouchScroller(viewportEl) {
 
       if (initDist > 10 && dist > 10) {
         const factor = dist / initDist;
-        const targetZoom = Math.min(3.5, Math.max(0.5, initZoom * factor));
-        const cont = viewportEl.querySelector('.notes-container, .pdf-pages-stack, .split-pane-content');
+        const targetZoom = Math.min(3.5, Math.max(0.4, initZoom * factor));
+        const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
         if (cont) {
           cont.style.transform = `scale(${targetZoom})`;
           cont.style.transformOrigin = 'top center';
         }
-        if (state.notes) state.notes.scale = targetZoom;
+        if (state.currentView === 'pdf-editor') {
+          if (state.pdf) state.pdf.scale = targetZoom;
+          if (state.activeItem) {
+            if (!state.activeItem.viewport) state.activeItem.viewport = {};
+            state.activeItem.viewport.zoom = targetZoom;
+          }
+          const zoomText = document.getElementById('pdf-zoom-text');
+          if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
+        } else {
+          if (state.notes) state.notes.scale = targetZoom;
+          if (state.activeItem) {
+            if (!state.activeItem.viewport) state.activeItem.viewport = {};
+            state.activeItem.viewport.zoom = targetZoom;
+          }
+          const zoomText = document.getElementById('zoom-percentage');
+          if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
+        }
       }
       return;
     }

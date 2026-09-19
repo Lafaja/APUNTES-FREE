@@ -1,4 +1,4 @@
-﻿// ===== 7. ENTORNO DE TRABAJO: VISOR Y ANOTADOR DE PDF CONTINUO (SOLUCIÓN NÍTIDA) =====
+// ===== 7. ENTORNO DE TRABAJO: VISOR Y ANOTADOR DE PDF CONTINUO (SOLUCIÓN NÍTIDA) =====
 async function loadPdfEditor(pdfItem) {
   normalizeDocumentState(pdfItem);
   state.activeItem = pdfItem;
@@ -21,6 +21,10 @@ async function loadPdfEditor(pdfItem) {
   handleToolButtonClick(activeTool, null);
 
   const stack = document.getElementById('pdf-pages-stack');
+  if (stack) {
+    stack.style.transform = '';
+    stack.style.transformOrigin = 'top center';
+  }
   stack.innerHTML = '<div style="color: #94a3b8; padding: 40px; font-size: 15px; text-align: center;">Cargando documento PDF...</div>';
   const viewport = document.getElementById('pdf-continuous-viewport');
   if (viewport) {
@@ -208,7 +212,7 @@ async function renderAllPdfPagesContinuous(pdfItem) {
       },
       null,
       viewportContainer,
-      wrapper,
+      stack,
       () => [],
       () => {},
       () => pdfItem

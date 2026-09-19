@@ -6248,7 +6248,7 @@ async function renderPdfInPane(pane, doc, container, savedVp = null) {
         },
         null,
         container,
-        pageWrap,
+        stack,
         () => [],
         () => {},
         () => doc,
@@ -6344,7 +6344,7 @@ function applyPaneZoom(pane, scale) {
   const container = document.getElementById(`split-content-${pane}`);
   if (!container) return;
 
-  const inner = container.querySelector('.notes-viewport-inner');
+  const inner = container.querySelector('.notes-viewport-inner, .pdf-pages-stack');
   if (inner) {
     inner.style.transform = `scale(${scale})`;
     inner.style.transformOrigin = 'top center';
