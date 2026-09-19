@@ -142,6 +142,8 @@ function syncImageStroke(s, img = null) {
   ];
 }
 
+const globalActiveTouches = new Map();
+
 function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onExtendCanvasHeight, scrollContainer, containerElement, getImages, onImagesChange, getTargetDoc, splitPane = null) {
   const abortController = new AbortController();
   const { signal } = abortController;
@@ -280,7 +282,6 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
   }
 
   // Rastreo de toques simultáneos para gestos de 2 dedos (Pinch-to-zoom y Paneo) y 1 dedo (deslizar con la mano)
-  const activeTouches = new Map();
   let isPinchingOrPanning = false;
   let initialPinchDist = 0;
   let initialPinchZoom = 1.0;
@@ -817,11 +818,11 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
   canvas.addEventListener('pointerdown', (e) => {
     // 1. RASTREO DE PUNTOS TÁCTILES
     if (e.pointerType === 'touch') {
-      activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      globalActiveTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
     // 2. DETECCIÓN DE DOS DEDOS: BLOQUEAR TRAZO Y ACTIVAR TRANSFORMACIÓN DEL VISOR (PINCH & PAN)
-    if (activeTouches.size >= 2) {
+    if (globalActiveTouches.size >= 2) {
       isSingleTouchPanning = false;
       if (isDrawing || currentStroke) {
         isDrawing = false;
@@ -843,7 +844,7 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       }
       isPinchingOrPanning = true;
 
-      const touches = Array.from(activeTouches.values());
+      const touches = Array.from(globalActiveTouches.values());
       const t1 = touches[0];
       const t2 = touches[1];
       initialPinchDist = Math.hypot(t2.x - t1.x, t2.y - t1.y) || 1;
@@ -1102,12 +1103,12 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
 
   // Pointer Move
   canvas.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch' && activeTouches.has(e.pointerId)) {
-      activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (e.pointerType === 'touch' && globalActiveTouches.has(e.pointerId)) {
+      globalActiveTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
     // DETECCIÓN DE DOS DEDOS: ACTIVAR TRANSFORMACIÓN DEL VISOR (PANEO Y ZOOM)
-    if (activeTouches.size >= 2) {
+    if (globalActiveTouches.size >= 2) {
       isSingleTouchPanning = false;
       if (isDrawing || currentStroke) {
         isDrawing = false;
@@ -1117,7 +1118,7 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       }
       isPinchingOrPanning = true;
 
-      const touches = Array.from(activeTouches.values());
+      const touches = Array.from(globalActiveTouches.values());
       const t1 = touches[0];
       const t2 = touches[1];
       const currentDist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
@@ -1137,7 +1138,7 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       // Pinch-to-zoom
       if (initialPinchDist > 10 && currentDist > 10) {
         const factor = currentDist / initialPinchDist;
-        const targetZoom = Math.min(3.5, Math.max(0.5, initialPinchZoom * factor));
+        const targetZoom = Math.min(3.5, Math.max(0.4, initialPinchZoom * factor));
         setViewportZoom(targetZoom);
       }
       return;
@@ -1442,12 +1443,12 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
   // Pointer Up
   const stop = (e) => {
     if (e.pointerType === 'touch') {
-      activeTouches.delete(e.pointerId);
-      if (activeTouches.size < 2) {
+      globalActiveTouches.delete(e.pointerId);
+      if (globalActiveTouches.size < 2) {
         isPinchingOrPanning = false;
       }
     }
-    if (isSingleTouchPanning) {
+    if (isSingleTouchPanning && globalActiveTouches.size === 0) {
       isSingleTouchPanning = false;
       startMomentum();
     }
@@ -1661,7 +1662,6 @@ function attachViewportTouchScroller(viewportEl) {
   let vx = 0, vy = 0;
   let lastT = 0;
   let animId = null;
-  const vpTouches = new Map();
   let initDist = 0;
   let initZoom = 1.0;
   let lastCenter = { x: 0, y: 0 };
@@ -1692,17 +1692,14 @@ function attachViewportTouchScroller(viewportEl) {
   };
 
   viewportEl.addEventListener('pointerdown', (e) => {
-    if (e.target.tagName === 'CANVAS' && (e.target.id === 'notes-canvas' || e.target.classList.contains('pdf-canvas-overlay') || e.target.classList.contains('canvas-drawing-layer'))) {
-      return;
-    }
     if (e.pointerType === 'touch') {
-      vpTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      globalActiveTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
     stopVpMomentum();
 
-    if (vpTouches.size >= 2) {
+    if (globalActiveTouches.size >= 2) {
       isTouchPanning = false;
-      const touches = Array.from(vpTouches.values());
+      const touches = Array.from(globalActiveTouches.values());
       initDist = Math.hypot(touches[1].x - touches[0].x, touches[1].y - touches[0].y) || 1;
       const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
       if (cont && cont.style.transform) {
@@ -1715,6 +1712,10 @@ function attachViewportTouchScroller(viewportEl) {
       return;
     }
 
+    if (e.target.tagName === 'CANVAS') {
+      return;
+    }
+
     isTouchPanning = true;
     lastX = e.clientX;
     lastY = e.clientY;
@@ -1724,13 +1725,13 @@ function attachViewportTouchScroller(viewportEl) {
   }, { passive: true });
 
   viewportEl.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch' && vpTouches.has(e.pointerId)) {
-      vpTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (e.pointerType === 'touch' && globalActiveTouches.has(e.pointerId)) {
+      globalActiveTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
-    if (vpTouches.size >= 2) {
+    if (globalActiveTouches.size >= 2) {
       isTouchPanning = false;
-      const touches = Array.from(vpTouches.values());
+      const touches = Array.from(globalActiveTouches.values());
       const dist = Math.hypot(touches[1].x - touches[0].x, touches[1].y - touches[0].y);
       const center = { x: (touches[0].x + touches[1].x) / 2, y: (touches[0].y + touches[1].y) / 2 };
 
@@ -1791,9 +1792,9 @@ function attachViewportTouchScroller(viewportEl) {
 
   const stopVp = (e) => {
     if (e.pointerType === 'touch') {
-      vpTouches.delete(e.pointerId);
+      globalActiveTouches.delete(e.pointerId);
     }
-    if (isTouchPanning && vpTouches.size === 0) {
+    if (isTouchPanning && globalActiveTouches.size === 0) {
       isTouchPanning = false;
       startVpMomentum();
     }
@@ -1803,6 +1804,43 @@ function attachViewportTouchScroller(viewportEl) {
   viewportEl.addEventListener('pointercancel', stopVp, { passive: true });
   window.addEventListener('pointerup', stopVp, { passive: true });
   window.addEventListener('pointercancel', stopVp, { passive: true });
+
+  viewportEl.addEventListener('wheel', (e) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
+      let curZ = 1.0;
+      if (cont && cont.style.transform) {
+        const m = cont.style.transform.match(/scale\(\s*([0-9.]+)\s*\)/);
+        if (m && parseFloat(m[1])) curZ = parseFloat(m[1]);
+      } else {
+        curZ = (state.currentView === 'pdf-editor' ? (state.pdf && state.pdf.scale) : (state.notes && state.notes.scale)) || 1.0;
+      }
+      const factor = e.deltaY < 0 ? 1.08 : 0.92;
+      const targetZoom = Math.min(3.5, Math.max(0.4, curZ * factor));
+      if (cont) {
+        cont.style.transform = `scale(${targetZoom})`;
+        cont.style.transformOrigin = 'top center';
+      }
+      if (state.currentView === 'pdf-editor') {
+        if (state.pdf) state.pdf.scale = targetZoom;
+        if (state.activeItem) {
+          if (!state.activeItem.viewport) state.activeItem.viewport = {};
+          state.activeItem.viewport.zoom = targetZoom;
+        }
+        const zoomText = document.getElementById('pdf-zoom-text');
+        if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
+      } else {
+        if (state.notes) state.notes.scale = targetZoom;
+        if (state.activeItem) {
+          if (!state.activeItem.viewport) state.activeItem.viewport = {};
+          state.activeItem.viewport.zoom = targetZoom;
+        }
+        const zoomText = document.getElementById('zoom-percentage');
+        if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
+      }
+    }
+  }, { passive: false });
 }
 
 
