@@ -384,6 +384,39 @@ async function bootstrapApp() {
   try {
     await initDatabase();
 
+    // Purgar de forma proactiva cualquier archivo o carpeta demo que haya quedado guardada en sesiones previas
+    try {
+      const demoNames = [
+        'Universidad e Ingeniería',
+        'Proyectos & Trabajo',
+        'Bocetos & Ideas',
+        'Bienvenido a Tablet Studio',
+        'Fórmulas y Matemáticas',
+        'Plan de Trabajo Semanal',
+        'Bocetos Libres'
+      ];
+      const allFolders = await dbGetFolders();
+      for (const f of allFolders) {
+        if (demoNames.some(dName => f.name.includes(dName))) {
+          await dbDeleteFolder(f.id);
+        }
+      }
+      const allItems = await dbGetItems();
+      for (const it of allItems) {
+        if (
+          demoNames.some(dName => it.name.includes(dName)) ||
+          it.id.startsWith('note_welcome_') ||
+          it.id.startsWith('note_math_') ||
+          it.id.startsWith('note_work_') ||
+          it.id.startsWith('note_sketch_')
+        ) {
+          await dbDeleteItem(it.id);
+        }
+      }
+    } catch (cleanErr) {
+      console.warn('Limpieza de archivos demo:', cleanErr);
+    }
+
     try {
       state.deviceDirName = getLocalStorageData('tablet_device_dir_name', null);
       const storedHandle = await dbGetDirectoryHandle();
