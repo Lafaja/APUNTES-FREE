@@ -821,9 +821,8 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       globalActiveTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
-    // 2. DETECCIÓN DE DOS DEDOS: BLOQUEAR TRAZO Y ACTIVAR TRANSFORMACIÓN DEL VISOR (PINCH & PAN)
+    // 2. DETECCIÓN DE DOS DEDOS: BLOQUEAR TRAZO
     if (globalActiveTouches.size >= 2) {
-      isSingleTouchPanning = false;
       if (isDrawing || currentStroke) {
         isDrawing = false;
         currentStroke = null;
@@ -842,21 +841,10 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
         isDrawingShape = false;
         clearSelectionOverlay();
       }
-      isPinchingOrPanning = true;
-
-      const touches = Array.from(globalActiveTouches.values());
-      const t1 = touches[0];
-      const t2 = touches[1];
-      initialPinchDist = Math.hypot(t2.x - t1.x, t2.y - t1.y) || 1;
-      initialPinchZoom = getCurrentDocZoom();
-      currentZoom = initialPinchZoom;
-      lastPinchCenter = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
       return;
     }
 
     // 3. MODO DESPLAZAMIENTO TÁCTIL (SCROLL CON EL DEDO / PAN / PALM REJECTION):
-    // Si se toca con el dedo (pointerType === 'touch') y está activo el modo desplazamiento (o 'Solo Lápiz' o herramienta 'pan'):
-    // Se activa el scroll fluido en tiempo real para poder bajar y subir de página con el dedo
     const isTouchInput = e.pointerType === 'touch';
     const isStylusOnlyMode = state.settings ? state.settings.stylusOnly !== false : true;
     const isPanTool = (state.notes && state.notes.tool === 'pan');
@@ -887,14 +875,7 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
     }
 
     if ((isStylusOnlyMode && isTouchInput) || isPanTool) {
-      isSingleTouchPanning = true;
-      lastSingleTouchPos = { x: e.clientX, y: e.clientY };
-      lastTouchTime = performance.now();
-      touchVelocityX = 0;
-      touchVelocityY = 0;
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch (err) {}
+      // Dejar que attachViewportTouchScroller gestione el desplazamiento y zoom táctil en el viewport
       return;
     }
 
@@ -1107,69 +1088,20 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       globalActiveTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
-    // DETECCIÓN DE DOS DEDOS: ACTIVAR TRANSFORMACIÓN DEL VISOR (PANEO Y ZOOM)
     if (globalActiveTouches.size >= 2) {
-      isSingleTouchPanning = false;
       if (isDrawing || currentStroke) {
         isDrawing = false;
         currentStroke = null;
         cancelPendingRedraw();
         redraw();
       }
-      isPinchingOrPanning = true;
-
-      const touches = Array.from(globalActiveTouches.values());
-      const t1 = touches[0];
-      const t2 = touches[1];
-      const currentDist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
-      const currentCenter = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
-
-      // Paneo con dos dedos
-      const dx = currentCenter.x - lastPinchCenter.x;
-      const dy = currentCenter.y - lastPinchCenter.y;
-      lastPinchCenter = currentCenter;
-
-      const vp = getActiveViewport();
-      if (vp) {
-        vp.scrollLeft -= dx;
-        vp.scrollTop -= dy;
-      }
-
-      // Pinch-to-zoom
-      if (initialPinchDist > 10 && currentDist > 10) {
-        const factor = currentDist / initialPinchDist;
-        const targetZoom = Math.min(3.5, Math.max(0.4, initialPinchZoom * factor));
-        setViewportZoom(targetZoom);
-      }
       return;
     }
 
-    // DESPLAZAMIENTO FLUIDO CON EL DEDO (Scroll vertical entre páginas y paneo horizontal)
-    if (isSingleTouchPanning) {
-      const now = performance.now();
-      const dt = Math.max(1, now - lastTouchTime);
-      const dx = e.clientX - lastSingleTouchPos.x;
-      const dy = e.clientY - lastSingleTouchPos.y;
-      lastSingleTouchPos = { x: e.clientX, y: e.clientY };
-      lastTouchTime = now;
-
-      // Estimación suave de velocidad para inercia (flick scroll)
-      const curVx = (dx / dt) * 16;
-      const curVy = (dy / dt) * 16;
-      touchVelocityX = touchVelocityX * 0.35 + curVx * 0.65;
-      touchVelocityY = touchVelocityY * 0.35 + curVy * 0.65;
-
-      const vp = getActiveViewport();
-      if (vp) {
-        vp.scrollLeft -= dx;
-        vp.scrollTop -= dy;
-      }
+    const isStylusOnlyMode = state.settings ? state.settings.stylusOnly !== false : true;
+    if ((isStylusOnlyMode && e.pointerType === 'touch') || (state.notes && state.notes.tool === 'pan')) {
       return;
     }
-
-    if (isPinchingOrPanning || isSingleTouchPanning) return;
-    if (state.settings && state.settings.stylusOnly !== false && e.pointerType === 'touch') return;
-    if (state.notes.tool === 'pan') return;
 
     e.preventDefault();
 
@@ -1442,23 +1374,15 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
 
   // Pointer Up
   const stop = (e) => {
-    if (e.pointerType === 'touch') {
+    if (e && e.pointerType === 'touch') {
       globalActiveTouches.delete(e.pointerId);
-      if (globalActiveTouches.size < 2) {
-        isPinchingOrPanning = false;
-      }
-    }
-    if (isSingleTouchPanning && globalActiveTouches.size === 0) {
-      isSingleTouchPanning = false;
-      startMomentum();
     }
     try {
-      if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+      if (e && canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
         canvas.releasePointerCapture(e.pointerId);
       }
     } catch (err) {}
-    if (isPinchingOrPanning) return;
-    if (state.settings && state.settings.stylusOnly !== false && e.pointerType === 'touch') return;
+    if (state.settings && state.settings.stylusOnly !== false && e && e.pointerType === 'touch') return;
 
     if (state.notes.tool === 'eraser') {
       isDrawing = false;
