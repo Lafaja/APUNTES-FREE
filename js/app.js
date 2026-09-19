@@ -4823,6 +4823,105 @@ async function promptSaveFile(blobOrString, suggestedName, mimeType, ext) {
   return true;
 }
 
+function renderStrokeToCanvas(ctx, s) {
+  if (!s) return;
+  if (s.isImage && (s.src || s.dataUrl)) {
+    const img = s.element || globalImageCache.get(s.src || s.dataUrl);
+    if (img && img.complete && img.naturalWidth > 0) {
+      ctx.save();
+      ctx.drawImage(img, s.x || 0, s.y || 0, s.width || 100, s.height || 100);
+      ctx.restore();
+    }
+    return;
+  }
+  if (!s.points || s.points.length === 0) return;
+  if (s.tool === 'eraser') return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const brush = s.brushType || s.tool;
+  const size = s.size || 3;
+  const color = s.color || '#000000';
+
+  // Relleno de formas si aplica
+  if (s.isShape && (s.fillMode === 'semi' || s.fillMode === 'solid')) {
+    ctx.fillStyle = s.fillColor || color;
+    ctx.globalAlpha = s.fillMode === 'semi' ? 0.35 : (s.opacity || 1.0);
+    ctx.moveTo(s.points[0].x, s.points[0].y);
+    for (let i = 1; i < s.points.length; i++) {
+      ctx.lineTo(s.points[i].x, s.points[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+  }
+
+  // Relleno por bote de pintura
+  if (s.isFill) {
+    ctx.fillStyle = s.fillColor || color;
+    ctx.globalAlpha = s.fillOpacity || 1.0;
+    ctx.moveTo(s.points[0].x, s.points[0].y);
+    for (let i = 1; i < s.points.length; i++) {
+      ctx.lineTo(s.points[i].x, s.points[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // Trazos estándar
+  if (brush === 'highlighter' || s.tool === 'highlighter') {
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = size * 3.2;
+  } else if (brush === 'pencil') {
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.65;
+    ctx.lineWidth = size;
+  } else if (brush === 'fountain') {
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = size * 1.25;
+  } else {
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = s.opacity || 1;
+    ctx.lineWidth = size;
+  }
+
+  const pts = s.points;
+  if (pts.length === 1) {
+    ctx.arc(pts[0].x, pts[0].y, size / 2, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  } else if (s.isShape) {
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
+    }
+    ctx.stroke();
+  } else if (pts.length === 2) {
+    ctx.moveTo(pts[0].x, pts[0].y);
+    ctx.lineTo(pts[1].x, pts[1].y);
+    ctx.stroke();
+  } else {
+    ctx.moveTo(pts[0].x, pts[0].y);
+    const mid0 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    ctx.lineTo(mid0.x, mid0.y);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const xc = (pts[i].x + pts[i + 1].x) / 2;
+      const yc = (pts[i].y + pts[i + 1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+    }
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 async function executeDocumentExport() {
   if (!state.activeItem) return;
 
@@ -4962,16 +5061,33 @@ async function executeDocumentExport() {
           ctx.fillRect(0, 0, pageW, pageH);
         }
 
-        // Trazos
-        if (srcCanvas) {
-          ctx.drawImage(
-            srcCanvas,
-            0, offsetY * noteDpr,
-            pageW * noteDpr, pageH * noteDpr,
-            0, 0,
-            pageW, pageH
-          );
-        }
+        // Trazos e imágenes de Apuntes
+        const noteStrokes = [...(state.activeItem.strokes || [])];
+        const noteImages = [...(state.activeItem.images || [])];
+
+        ctx.save();
+        ctx.translate(0, -offsetY);
+
+        noteImages.forEach(imgData => {
+          const src = imgData.src || imgData.dataUrl;
+          if (src) {
+            let img = imgData.element || globalImageCache.get(src);
+            if (!img) {
+              img = new Image();
+              img.src = src;
+              globalImageCache.set(src, img);
+            }
+            if (img.complete && img.naturalWidth > 0) {
+              ctx.drawImage(img, imgData.x, imgData.y, imgData.width, imgData.height);
+            }
+          }
+        });
+
+        noteStrokes.forEach(s => {
+          renderStrokeToCanvas(ctx, s);
+        });
+
+        ctx.restore();
 
         renderedCanvases.push({
           canvas: pCanvas,
@@ -5019,65 +5135,18 @@ async function executeDocumentExport() {
           drawCanvasPattern(ctx, renderLeftW + viewport.width, 0, renderRightW, renderTotalH, sideCfg.pattern, sideCfg.bgColor || '#ffffff', (sideCfg.gridSize || 28) * renderScale);
         }
 
-        // Dibujar anotaciones táctiles en todo el ancho
+        // Dibujar anotaciones táctiles en todo el ancho alineadas con precisión
         const overlayStrokes = (state.activeItem.pdfData && state.activeItem.pdfData.annotations && state.activeItem.pdfData.annotations[pageNum]) || [];
         if (overlayStrokes.length > 0) {
-          const dpr = Math.max(window.devicePixelRatio || 1, 2);
-          const currentScale = state.pdf.scale || 1.0;
-          const ratio = (renderTotalW / (totalUnscaledW * currentScale));
+          const strokeScale = renderTotalW / totalUnscaledW;
 
           ctx.save();
-          ctx.scale(ratio / dpr, ratio / dpr);
+          ctx.scale(strokeScale, strokeScale);
 
           overlayStrokes.forEach(s => {
-            if (s.isImage && (s.src || s.dataUrl)) {
-              const img = new Image();
-              img.src = s.src || s.dataUrl;
-              const ix = s.x || 0;
-              const iy = s.y || 0;
-              const iw = s.width || 100;
-              const ih = s.height || 100;
-              ctx.drawImage(img, ix, iy, iw, ih);
-              return;
-            }
-            if (!s.points || s.points.length === 0) return;
-            ctx.save();
-            ctx.beginPath();
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-
-            if (s.tool === 'highlighter' || s.brushType === 'highlighter') {
-              ctx.strokeStyle = s.color;
-              ctx.globalAlpha = 0.45;
-              ctx.lineWidth = (s.size || 3) * 3.2;
-            } else if (s.tool === 'eraser') {
-              ctx.globalCompositeOperation = 'destination-out';
-              ctx.lineWidth = (s.size || 20) * 2;
-            } else {
-              ctx.strokeStyle = s.color;
-              ctx.globalAlpha = 1;
-              ctx.lineWidth = s.size || 3;
-            }
-
-            const pts = s.points;
-            if (pts.length === 1) {
-              ctx.arc(pts[0].x, pts[0].y, (s.size || 3) / 2, 0, Math.PI * 2);
-              ctx.fillStyle = s.color;
-              ctx.fill();
-            } else {
-              ctx.moveTo(pts[0].x, pts[0].y);
-              for (let j = 1; j < pts.length - 1; j++) {
-                const xc = (pts[j].x + pts[j + 1].x) / 2;
-                const yc = (pts[j].y + pts[j + 1].y) / 2;
-                ctx.quadraticCurveTo(pts[j].x, pts[j].y, xc, yc);
-              }
-              if (pts.length > 1) {
-                ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-              }
-              ctx.stroke();
-            }
-            ctx.restore();
+            renderStrokeToCanvas(ctx, s);
           });
+
           ctx.restore();
         }
 
