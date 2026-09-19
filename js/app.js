@@ -1420,6 +1420,7 @@ async function batchDeleteSelected() {
     return;
   }
 
+  if (state.deviceDirHandle) await verifyDirectoryPermission(state.deviceDirHandle, true);
   const confirmed = await showDeleteConfirmModal(`${total} elemento${total === 1 ? '' : 's'}`, 'los elementos seleccionados');
   if (confirmed) {
     for (const id of allSelected) {
@@ -1617,9 +1618,10 @@ function renderGrid() {
 
     card.querySelector('.btn-rename').onclick = async (e) => {
       e.stopPropagation();
+      if (state.deviceDirHandle) await verifyDirectoryPermission(state.deviceDirHandle, true);
       const res = await showRenameModal(folder.name, true, folder.color);
-      if (res && res.name) {
-        await dbRenameFolder(folder.id, res.name, res.color);
+      if (res && res.name && res.name.trim()) {
+        await dbRenameFolder(folder.id, res.name.trim(), res.color);
         await refreshFileManager();
       }
     };
@@ -1631,6 +1633,7 @@ function renderGrid() {
 
     card.querySelector('.btn-del').onclick = async (e) => {
       e.stopPropagation();
+      if (state.deviceDirHandle) await verifyDirectoryPermission(state.deviceDirHandle, true);
       const confirmed = await showDeleteConfirmModal(folder.name, 'carpeta');
       if (confirmed) {
         await dbDeleteFolder(folder.id);
@@ -1706,6 +1709,7 @@ function renderGrid() {
 
     card.querySelector('.btn-rename').onclick = async (e) => {
       e.stopPropagation();
+      if (state.deviceDirHandle) await verifyDirectoryPermission(state.deviceDirHandle, true);
       const res = await showRenameModal(item.name, false);
       if (res && res.name && res.name !== item.name) {
         const oldDiskFileName = item._diskFileName || (item.type === 'note' ? getNoteFileName(item) : `${(item.name || 'documento').replace(/[/\\?%*:|"<>]/g, '_')}.pdf`);
@@ -1731,6 +1735,7 @@ function renderGrid() {
 
     card.querySelector('.btn-del').onclick = async (e) => {
       e.stopPropagation();
+      if (state.deviceDirHandle) await verifyDirectoryPermission(state.deviceDirHandle, true);
       const confirmed = await showDeleteConfirmModal(item.name, 'archivo');
       if (confirmed) {
         await dbDeleteItem(item.id);
@@ -1865,6 +1870,10 @@ function initFileManagerEvents() {
     const orientation = document.querySelector('input[name="note-orientation"]:checked')?.value || 'portrait';
     if (!name) return;
 
+    if (state.deviceDirHandle) {
+      await verifyDirectoryPermission(state.deviceDirHandle, true);
+    }
+
     modalNote.classList.remove('open');
     const newNote = await dbCreateNote(name, paperSize, orientation, state.currentFolderId);
     await refreshFileManager();
@@ -1896,6 +1905,10 @@ function initFileManagerEvents() {
     e.preventDefault();
     const name = document.getElementById('input-folder-name').value.trim();
     if (!name) return;
+
+    if (state.deviceDirHandle) {
+      await verifyDirectoryPermission(state.deviceDirHandle, true);
+    }
 
     modalFolder.classList.remove('open');
     await dbCreateFolder(name, state.selectedFolderColor, state.currentFolderId);
@@ -2209,7 +2222,7 @@ function loadNoteEditor(noteItem) {
       const currentZoom = Math.min(3.5, Math.max(0.5, noteItem.viewport.zoom));
       if (container) {
         container.style.transform = `scale(${currentZoom})`;
-        container.style.transformOrigin = 'top center';
+        container.style.transformOrigin = '0 0';
       }
       state.notes.scale = currentZoom;
     }
@@ -5662,18 +5675,17 @@ function setupSplitNotePanel(pane, doc, canvas, selCanvas, container, inner, cur
       const currentDist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
       const currentCenter = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
 
-      const dx = currentCenter.x - lastPinchCenter.x;
-      const dy = currentCenter.y - lastPinchCenter.y;
-      lastPinchCenter = currentCenter;
+      const panDx = currentCenter.x - lastPinchCenter.x;
+      const panDy = currentCenter.y - lastPinchCenter.y;
 
-      container.scrollLeft -= dx;
-      container.scrollTop -= dy;
-
+      let targetZoom = (pane === 'left' ? state.split.leftScale : state.split.rightScale) || 1.0;
       if (initialPinchDist > 10 && currentDist > 10) {
         const factor = currentDist / initialPinchDist;
-        const targetZoom = Math.min(2.5, Math.max(0.4, initialPinchZoom * factor));
-        applyPaneZoom(pane, targetZoom);
+        targetZoom = Math.min(2.5, Math.max(0.4, initialPinchZoom * factor));
       }
+
+      applyPaneZoom(pane, targetZoom, currentCenter, panDx, panDy);
+      lastPinchCenter = currentCenter;
       return;
     }
 
@@ -6333,8 +6345,9 @@ async function swapSplitPanes() {
   showToast('Paneles intercambiados', 'info');
 }
 
-function applyPaneZoom(pane, scale) {
+function applyPaneZoom(pane, scale, focalPoint = null, panDx = 0, panDy = 0) {
   scale = Math.max(0.4, Math.min(2.5, scale));
+  const prevScale = (pane === 'left' ? state.split.leftScale : state.split.rightScale) || 1.0;
   if (pane === 'left') state.split.leftScale = scale;
   else state.split.rightScale = scale;
 
@@ -6346,8 +6359,19 @@ function applyPaneZoom(pane, scale) {
 
   const inner = container.querySelector('.notes-viewport-inner, .pdf-pages-stack');
   if (inner) {
-    inner.style.transform = `scale(${scale})`;
-    inner.style.transformOrigin = 'top center';
+    if (focalPoint) {
+      const innerRect = inner.getBoundingClientRect();
+      const zoomRatio = scale / prevScale;
+      const zoomDeltaX = (focalPoint.x - innerRect.left) * (zoomRatio - 1);
+      const zoomDeltaY = (focalPoint.y - innerRect.top) * (zoomRatio - 1);
+      inner.style.transformOrigin = '0 0';
+      inner.style.transform = `scale(${scale})`;
+      container.scrollLeft += zoomDeltaX - panDx;
+      container.scrollTop += zoomDeltaY - panDy;
+    } else {
+      inner.style.transformOrigin = '0 0';
+      inner.style.transform = `scale(${scale})`;
+    }
   }
 }
 

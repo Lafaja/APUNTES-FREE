@@ -1022,14 +1022,14 @@ html, body {
 /* ===== 6. POPOVERS FLOTANTES (ESTILO APPLE IPADOS / GOODNOTES) ===== */
 .tool-config-popover,
 .paper-config-popover {
-  position: absolute;
+  position: fixed !important;
   top: 58px;
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-card);
   border-radius: 18px;
   padding: 16px 18px;
   box-shadow: var(--shadow-popover);
-  z-index: 70;
+  z-index: 9999 !important;
   min-width: 320px;
   max-width: 380px;
   backdrop-filter: blur(24px);

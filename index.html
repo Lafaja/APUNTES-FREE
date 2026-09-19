@@ -13,7 +13,7 @@
 
   <!-- Estilos Embebidos AutÃ³nomos (Sin dependencias externas ni CORS) -->
     <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/styles.css?v=1.0.6">
 
 </head>
 <body>
@@ -213,354 +213,6 @@
         </button>
       </div>
     </header>
-
-    <!-- POPOVER INTERACTIVO: AJUSTES DE PINCEL / BOLÍGRAFO / PLUMA (Se abre al pinchar en el pincel) -->
-    <div class="tool-config-popover" id="popover-brush-settings" style="display: none;">
-      <div class="popover-header">
-        <h4 id="brush-popover-title">Ajustes de Pincel</h4>
-        <button class="btn-close-popover" id="btn-close-brush-popover">&times;</button>
-      </div>
-
-      <!-- Selector de Tipo de Pincel -->
-      <div class="popover-section">
-        <label>Tipo de Trazo</label>
-        <div class="brush-types-grid">
-          <button class="brush-type-btn active" data-type="pen" title="Bolígrafo Estándar">
-            <span class="brush-icon">🖊️</span>
-            <span>Bolígrafo</span>
-          </button>
-          <button class="brush-type-btn" data-type="fountain" title="Pluma Caligráfica con Presión">
-            <span class="brush-icon">✒️</span>
-            <span>Pluma</span>
-          </button>
-          <button class="brush-type-btn" data-type="brush" title="Pincel Artístico Suave">
-            <span class="brush-icon">🖌️</span>
-            <span>Pincel</span>
-          </button>
-          <button class="brush-type-btn" data-type="pencil" title="Lápiz Grafito Texturizado">
-            <span class="brush-icon">✏️</span>
-            <span>Lápiz</span>
-          </button>
-          <button class="brush-type-btn" data-type="highlighter" title="Subrayador Semitransparente">
-            <span class="brush-icon">🖍️</span>
-            <span>Marcador</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Color del Pincel (Directo en el Pincel) -->
-      <div class="popover-section">
-        <div class="flex-between">
-          <label>Color del Trazo</label>
-          <button type="button" class="btn-open-color-dialog" id="btn-open-brush-color-picker" title="Abrir selector libre de color con vista previa, Aceptar y Cancelar">
-            🎨 Color Libre...
-          </button>
-        </div>
-        <div class="popover-colors-row" id="brush-popover-colors">
-          <!-- Swatches de colores dinámicos -->
-        </div>
-      </div>
-
-      <!-- Selector de Grosor con Presets Visuales -->
-      <div class="popover-section">
-        <div class="flex-between">
-          <label>Grosor del Trazo</label>
-          <span class="preset-value-badge" id="brush-size-val">3px</span>
-        </div>
-        <div class="size-presets-row" id="brush-size-presets">
-          <button class="size-pill-btn" data-size="1">1px</button>
-          <button class="size-pill-btn active" data-size="3">3px</button>
-          <button class="size-pill-btn" data-size="6">6px</button>
-          <button class="size-pill-btn" data-size="10">10px</button>
-          <button class="size-pill-btn" data-size="16">16px</button>
-          <button class="size-pill-btn" data-size="24">24px</button>
-          <button class="size-pill-btn" data-size="36">36px</button>
-        </div>
-        <input type="range" id="input-brush-size-slider" min="1" max="50" value="3" class="slider-smooth" />
-      </div>
-
-      <!-- Previsualización en Vivo del Trazo -->
-      <div class="brush-preview-box">
-        <canvas id="brush-preview-canvas" width="280" height="46"></canvas>
-      </div>
-
-      <!-- Acciones de Pincel -->
-      <div class="popover-section flex-between">
-        <button type="button" class="btn-save-as-brush" id="btn-save-current-as-brush">
-          ⭐ Duplicar en la Barra
-        </button>
-        <button type="button" class="btn-delete-active-tool" id="btn-delete-custom-tool" title="Eliminar esta herramienta de la barra">
-          🗑️ Eliminar
-        </button>
-      </div>
-    </div>
-
-    <!-- POPOVER INTERACTIVO: AJUSTES DE GOMA / BORRADOR (Se abre al pinchar en la goma) -->
-    <div class="tool-config-popover" id="popover-eraser-settings" style="display: none;">
-      <div class="popover-header">
-        <h4>Ajustes de Goma de Borrar</h4>
-        <button class="btn-close-popover" id="btn-close-eraser-popover">&times;</button>
-      </div>
-
-      <!-- Modo de Borrado -->
-      <div class="popover-section">
-        <label>Modo de Borrado</label>
-        <div class="eraser-modes-grid">
-          <button class="eraser-mode-btn active" id="eraser-mode-stroke" title="Elimina el trazo completo que toques">
-            <span>⚡ Borrador de Trazo Completo</span>
-          </button>
-          <button class="eraser-mode-btn" id="eraser-mode-area" title="Borra píxeles por área / radio">
-            <span>🎯 Borrador de Área / Precisión</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Grosor de la Goma -->
-      <div class="popover-section">
-        <div class="flex-between">
-          <label>Tamaño de la Goma</label>
-          <span class="preset-value-badge" id="eraser-size-val">20px</span>
-        </div>
-        <div class="size-presets-row" id="eraser-size-presets">
-          <button class="size-pill-btn" data-size="8">Fino (8px)</button>
-          <button class="size-pill-btn active" data-size="20">Medio (20px)</button>
-          <button class="size-pill-btn" data-size="45">Grueso (45px)</button>
-          <button class="size-pill-btn" data-size="85">Gigante (85px)</button>
-        </div>
-        <input type="range" id="input-eraser-size-slider" min="4" max="100" value="20" class="slider-smooth" />
-      </div>
-
-      <!-- Acción Rápida: Limpiar Lienzo -->
-      <div class="popover-section">
-        <button class="btn-clear-canvas-danger" id="btn-clear-canvas-notes">
-          🗑️ Limpiar Todo el Lienzo
-        </button>
-      </div>
-    </div>
-
-    <!-- POPOVER INTERACTIVO: PALETA COMPLETA DE COLORES Y FAVORITOS -->
-    <div class="tool-config-popover popover-wide" id="popover-palette-settings" style="display: none;">
-      <div class="popover-header">
-        <h4>Paleta de Colores & Favoritos</h4>
-        <button class="btn-close-popover" id="btn-close-palette-popover">&times;</button>
-      </div>
-
-      <!-- Colores Principales y Extendidos -->
-      <div class="popover-section">
-        <label>Colores Seleccionados</label>
-        <div class="extended-palette-grid" id="extended-palette-grid">
-          <!-- 16 Colores seleccionados -->
-        </div>
-      </div>
-
-      <!-- Selector de Color Libre -->
-      <div class="popover-section">
-        <label>Color Personalizado Libre</label>
-        <div class="custom-color-row">
-          <input type="color" id="input-full-custom-color" value="#2563eb" class="native-color-picker" />
-          <input type="text" id="input-color-hex-text" value="#2563EB" class="hex-text-input" />
-          <button class="btn-add-favorite-color" id="btn-add-fav-color">
-            + Guardar Favorito
-          </button>
-        </div>
-      </div>
-
-      <!-- Mis Colores Favoritos Guardados -->
-      <div class="popover-section">
-        <label>Mis Colores Guardados</label>
-        <div class="fav-colors-row" id="fav-colors-row">
-          <!-- Renderizado dinámico de favoritos -->
-        </div>
-      </div>
-    </div>
-
-    <!-- POPOVER INTERACTIVO: FORMAS GEOMÉTRICAS ESTÁNDAR -->
-    <div class="tool-config-popover popover-wide" id="popover-shapes-settings" style="display: none;">
-      <div class="popover-header">
-        <h4>Formas Geométricas Estándar</h4>
-        <button class="btn-close-popover" id="btn-close-shapes-popover">&times;</button>
-      </div>
-
-      <!-- Grid de Tipos de Formas -->
-      <div class="popover-section">
-        <label>Elige una Forma</label>
-        <div class="shapes-types-grid">
-          <button class="shape-type-btn active" data-shape="rectangle" title="Rectángulo / Cuadrado">
-            <span class="shape-icon">⬛</span>
-            <span>Rectángulo</span>
-          </button>
-          <button class="shape-type-btn" data-shape="circle" title="Círculo / Elipse">
-            <span class="shape-icon">⭕</span>
-            <span>Círculo</span>
-          </button>
-          <button class="shape-type-btn" data-shape="line" title="Línea Recta">
-            <span class="shape-icon">📏</span>
-            <span>Línea</span>
-          </button>
-          <button class="shape-type-btn" data-shape="arrow" title="Flecha">
-            <span class="shape-icon">➡️</span>
-            <span>Flecha</span>
-          </button>
-          <button class="shape-type-btn" data-shape="triangle" title="Triángulo">
-            <span class="shape-icon">🔺</span>
-            <span>Triángulo</span>
-          </button>
-          <button class="shape-type-btn" data-shape="star" title="Estrella">
-            <span class="shape-icon">⭐</span>
-            <span>Estrella</span>
-          </button>
-          <button class="shape-type-btn" data-shape="hexagon" title="Hexágono">
-            <span class="shape-icon">⬡</span>
-            <span>Hexágono</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Opciones de Relleno de la Forma -->
-      <div class="popover-section">
-        <label>Modo de Relleno</label>
-        <div class="shape-fill-modes">
-          <button class="fill-mode-btn active" data-fill="none" title="Solo Borde / Sin Relleno">
-            <span>🚫 Sin Relleno</span>
-          </button>
-          <button class="fill-mode-btn" data-fill="semi" title="Relleno Translúcido (35%)">
-            <span>💧 Translúcido</span>
-          </button>
-          <button class="fill-mode-btn" data-fill="solid" title="Relleno Sólido (100%)">
-            <span>⬛ Sólido</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Grosor del Borde de la Forma -->
-      <div class="popover-section">
-        <div class="flex-between">
-          <label>Grosor del Borde</label>
-          <span class="preset-value-badge" id="shape-size-val">3px</span>
-        </div>
-        <div class="size-presets-row" id="shape-size-presets">
-          <button class="size-pill-btn" data-size="1">1px</button>
-          <button class="size-pill-btn active" data-size="3">3px</button>
-          <button class="size-pill-btn" data-size="6">6px</button>
-          <button class="size-pill-btn" data-size="12">12px</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- POPOVER INTERACTIVO: BOTE DE PINTURA Y RELLENO -->
-    <div class="tool-config-popover" id="popover-fill-settings" style="display: none;">
-      <div class="popover-header">
-        <h4>Bote de Relleno de Color</h4>
-        <button class="btn-close-popover" id="btn-close-fill-popover">&times;</button>
-      </div>
-
-      <!-- Opacidad del Relleno -->
-      <div class="popover-section">
-        <label>Intensidad del Relleno</label>
-        <div class="shape-fill-modes">
-          <button class="bucket-opacity-btn active" data-opacity="1.0" title="Relleno Sólido">
-            <span>Sólido 100%</span>
-          </button>
-          <button class="bucket-opacity-btn" data-opacity="0.45" title="Relleno Translúcido">
-            <span>Acuarela 45%</span>
-          </button>
-          <button class="bucket-opacity-btn" data-opacity="0.25" title="Relleno Muy Suave">
-            <span>Pastel 25%</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="popover-section">
-        <p class="text-secondary" style="font-size: 11px; line-height: 1.4;">
-          👉 <strong>Cómo usar:</strong> Toca dentro de cualquier figura cerrada o trazo en el lienzo para rellenarlo instantáneamente con el color seleccionado.
-        </p>
-      </div>
-    </div>
-
-    <!-- Panel Flotante / Popover de Configuración de Papel y Cuadrícula -->
-    <div class="paper-config-popover" id="paper-config-popover" style="display: none;">
-      <div class="popover-header">
-        <h4>Personalizar Papel</h4>
-        <button class="btn-close-popover" id="btn-close-paper-popover">&times;</button>
-      </div>
-
-      <!-- 1. Color de Fondo del Papel -->
-      <div class="popover-section">
-        <label>Color de Fondo</label>
-        <div class="paper-color-presets">
-          <button class="paper-color-btn" data-color="#111827" style="background-color: #111827;" title="Gris Muy Oscuro / Pizarra"></button>
-          <button class="paper-color-btn" data-color="#ffffff" style="background-color: #ffffff; border-color: #cbd5e1;" title="Blanco Clásico"></button>
-          <button class="paper-color-btn active" data-color="#fdf6e2" style="background-color: #fdf6e2; border-color: #e2d7be;" title="Papel Beige / Marfil"></button>
-          <button class="paper-color-btn" data-color="#1e3a8a" style="background-color: #1e3a8a;" title="Azul Plano (Blueprint)"></button>
-          
-          <!-- Selector Libre de Color de Fondo -->
-          <label class="custom-color-picker-label" title="Cualquier Color Personalizado">
-            <input type="color" id="input-custom-bg-color" value="#fdf6e2" />
-            <span class="custom-color-indicator">🎨</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- 2. Tipo de Patrón de Cuadrícula / Líneas -->
-      <div class="popover-section">
-        <label>Tipo de Cuadrícula</label>
-        <div class="pattern-type-grid">
-          <button class="pattern-type-btn" data-pattern="blank" title="Liso (Sin cuadrícula)">
-            <span>⬜ Liso</span>
-          </button>
-          <button class="pattern-type-btn active" data-pattern="grid" title="Cuadrícula / Cuadrados">
-            <span>🔲 Cuadrícula</span>
-          </button>
-          <button class="pattern-type-btn" data-pattern="lines" title="Líneas / Rayado">
-            <span>📑 Rayas</span>
-          </button>
-          <button class="pattern-type-btn" data-pattern="dots" title="Puntos">
-            <span>⠇ Puntos</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- 3. Tamaño / Separación de la Cuadrícula -->
-      <div class="popover-section">
-        <div class="flex-between">
-          <label>Tamaño de Cuadrícula / Líneas</label>
-          <span class="grid-size-text" id="grid-size-text">28px</span>
-        </div>
-        <input type="range" id="input-grid-size" min="14" max="64" value="28" class="slider-grid-size" />
-      </div>
-    </div>
-
-    <!-- Barra Flotante de Acciones de Selección (Copiar, Duplicar, Mover, Recortar, Rotar, Eliminar, Dimensiones) -->
-    <div class="selection-actions-bar" id="selection-actions-bar" style="display: none;">
-      <span class="selection-dim-badge" id="selection-dim-badge" title="Dimensiones de los elementos seleccionados">📏 0 × 0</span>
-      <div class="separator-v"></div>
-      <button class="btn-sel-action btn-sel-crop" id="btn-sel-crop" style="display: none;" title="Recortar Foto Seleccionada">
-        <span>✂️ Recortar</span>
-      </button>
-      <button class="btn-sel-action" id="btn-sel-rotate-left" title="Rotar 90° a la izquierda (Antihorario)">
-        <span>⟲ -90°</span>
-      </button>
-      <button class="btn-sel-action" id="btn-sel-rotate-right" title="Rotar 90° a la derecha (Horario)">
-        <span>⟳ +90°</span>
-      </button>
-      <div class="separator-v"></div>
-      <button class="btn-sel-action" id="btn-sel-copy" title="Copiar Trazos">
-        <span>📋 Copiar</span>
-      </button>
-      <button class="btn-sel-action" id="btn-sel-paste" title="Pegar Trazos">
-        <span>📄 Pegar</span>
-      </button>
-      <button class="btn-sel-action" id="btn-sel-duplicate" title="Duplicar Trazos Seleccionados">
-        <span>📑 Duplicar</span>
-      </button>
-      <div class="separator-v"></div>
-      <button class="btn-sel-action text-danger" id="btn-sel-delete" title="Eliminar Selección">
-        <span>🗑️ Eliminar</span>
-      </button>
-      <button class="btn-sel-action" id="btn-sel-clear" title="Deseleccionar">
-        <span>✕</span>
-      </button>
-    </div>
 
     <!-- Área de Lienzo / Canvas -->
     <main class="notes-viewport" id="notes-viewport">
@@ -843,6 +495,358 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- POPOVERS COMPARTIDOS (Apuntes, PDF y Split View)          -->
+  <!-- ========================================================= -->
+
+  <!-- POPOVER INTERACTIVO: AJUSTES DE PINCEL / BOLÍGRAFO / PLUMA (Se abre al pinchar en el pincel) -->
+  <div class="tool-config-popover" id="popover-brush-settings" style="display: none;">
+    <div class="popover-header">
+      <h4 id="brush-popover-title">Ajustes de Pincel</h4>
+      <button class="btn-close-popover" id="btn-close-brush-popover">&times;</button>
+    </div>
+
+    <!-- Selector de Tipo de Pincel -->
+    <div class="popover-section">
+      <label>Tipo de Trazo</label>
+      <div class="brush-types-grid">
+        <button class="brush-type-btn active" data-type="pen" title="Bolígrafo Estándar">
+          <span class="brush-icon">🖊️</span>
+          <span>Bolígrafo</span>
+        </button>
+        <button class="brush-type-btn" data-type="fountain" title="Pluma Caligráfica con Presión">
+          <span class="brush-icon">✒️</span>
+          <span>Pluma</span>
+        </button>
+        <button class="brush-type-btn" data-type="brush" title="Pincel Artístico Suave">
+          <span class="brush-icon">🖌️</span>
+          <span>Pincel</span>
+        </button>
+        <button class="brush-type-btn" data-type="pencil" title="Lápiz Grafito Texturizado">
+          <span class="brush-icon">✏️</span>
+          <span>Lápiz</span>
+        </button>
+        <button class="brush-type-btn" data-type="highlighter" title="Subrayador Semitransparente">
+          <span class="brush-icon">🖍️</span>
+          <span>Marcador</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Color del Pincel (Directo en el Pincel) -->
+    <div class="popover-section">
+      <div class="flex-between">
+        <label>Color del Trazo</label>
+        <button type="button" class="btn-open-color-dialog" id="btn-open-brush-color-picker" title="Abrir selector libre de color con vista previa, Aceptar y Cancelar">
+          🎨 Color Libre...
+        </button>
+      </div>
+      <div class="popover-colors-row" id="brush-popover-colors">
+        <!-- Swatches de colores dinámicos -->
+      </div>
+    </div>
+
+    <!-- Selector de Grosor con Presets Visuales -->
+    <div class="popover-section">
+      <div class="flex-between">
+        <label>Grosor del Trazo</label>
+        <span class="preset-value-badge" id="brush-size-val">3px</span>
+      </div>
+      <div class="size-presets-row" id="brush-size-presets">
+        <button class="size-pill-btn" data-size="1">1px</button>
+        <button class="size-pill-btn active" data-size="3">3px</button>
+        <button class="size-pill-btn" data-size="6">6px</button>
+        <button class="size-pill-btn" data-size="10">10px</button>
+        <button class="size-pill-btn" data-size="16">16px</button>
+        <button class="size-pill-btn" data-size="24">24px</button>
+        <button class="size-pill-btn" data-size="36">36px</button>
+      </div>
+      <input type="range" id="input-brush-size-slider" min="1" max="50" value="3" class="slider-smooth" />
+    </div>
+
+    <!-- Previsualización en Vivo del Trazo -->
+    <div class="brush-preview-box">
+      <canvas id="brush-preview-canvas" width="280" height="46"></canvas>
+    </div>
+
+    <!-- Acciones de Pincel -->
+    <div class="popover-section flex-between">
+      <button type="button" class="btn-save-as-brush" id="btn-save-current-as-brush">
+        ⭐ Duplicar en la Barra
+      </button>
+      <button type="button" class="btn-delete-active-tool" id="btn-delete-custom-tool" title="Eliminar esta herramienta de la barra">
+        🗑️ Eliminar
+      </button>
+    </div>
+  </div>
+
+  <!-- POPOVER INTERACTIVO: AJUSTES DE GOMA / BORRADOR (Se abre al pinchar en la goma) -->
+  <div class="tool-config-popover" id="popover-eraser-settings" style="display: none;">
+    <div class="popover-header">
+      <h4>Ajustes de Goma de Borrar</h4>
+      <button class="btn-close-popover" id="btn-close-eraser-popover">&times;</button>
+    </div>
+
+    <!-- Modo de Borrado -->
+    <div class="popover-section">
+      <label>Modo de Borrado</label>
+      <div class="eraser-modes-grid">
+        <button class="eraser-mode-btn active" id="eraser-mode-stroke" title="Elimina el trazo completo que toques">
+          <span>⚡ Borrador de Trazo Completo</span>
+        </button>
+        <button class="eraser-mode-btn" id="eraser-mode-area" title="Borra píxeles por área / radio">
+          <span>🎯 Borrador de Área / Precisión</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Grosor de la Goma -->
+    <div class="popover-section">
+      <div class="flex-between">
+        <label>Tamaño de la Goma</label>
+        <span class="preset-value-badge" id="eraser-size-val">20px</span>
+      </div>
+      <div class="size-presets-row" id="eraser-size-presets">
+        <button class="size-pill-btn" data-size="8">Fino (8px)</button>
+        <button class="size-pill-btn active" data-size="20">Medio (20px)</button>
+        <button class="size-pill-btn" data-size="45">Grueso (45px)</button>
+        <button class="size-pill-btn" data-size="85">Gigante (85px)</button>
+      </div>
+      <input type="range" id="input-eraser-size-slider" min="4" max="100" value="20" class="slider-smooth" />
+    </div>
+
+    <!-- Acción Rápida: Limpiar Lienzo -->
+    <div class="popover-section">
+      <button class="btn-clear-canvas-danger" id="btn-clear-canvas-notes">
+        🗑️ Limpiar Todo el Lienzo
+      </button>
+    </div>
+  </div>
+
+  <!-- POPOVER INTERACTIVO: PALETA COMPLETA DE COLORES Y FAVORITOS -->
+  <div class="tool-config-popover popover-wide" id="popover-palette-settings" style="display: none;">
+    <div class="popover-header">
+      <h4>Paleta de Colores & Favoritos</h4>
+      <button class="btn-close-popover" id="btn-close-palette-popover">&times;</button>
+    </div>
+
+    <!-- Colores Principales y Extendidos -->
+    <div class="popover-section">
+      <label>Colores Seleccionados</label>
+      <div class="extended-palette-grid" id="extended-palette-grid">
+        <!-- 16 Colores seleccionados -->
+      </div>
+    </div>
+
+    <!-- Selector de Color Libre -->
+    <div class="popover-section">
+      <label>Color Personalizado Libre</label>
+      <div class="custom-color-row">
+        <input type="color" id="input-full-custom-color" value="#2563eb" class="native-color-picker" />
+        <input type="text" id="input-color-hex-text" value="#2563EB" class="hex-text-input" />
+        <button class="btn-add-favorite-color" id="btn-add-fav-color">
+          + Guardar Favorito
+        </button>
+      </div>
+    </div>
+
+    <!-- Mis Colores Favoritos Guardados -->
+    <div class="popover-section">
+      <label>Mis Colores Guardados</label>
+      <div class="fav-colors-row" id="fav-colors-row">
+        <!-- Renderizado dinámico de favoritos -->
+      </div>
+    </div>
+  </div>
+
+  <!-- POPOVER INTERACTIVO: FORMAS GEOMÉTRICAS ESTÁNDAR -->
+  <div class="tool-config-popover popover-wide" id="popover-shapes-settings" style="display: none;">
+    <div class="popover-header">
+      <h4>Formas Geométricas Estándar</h4>
+      <button class="btn-close-popover" id="btn-close-shapes-popover">&times;</button>
+    </div>
+
+    <!-- Grid de Tipos de Formas -->
+    <div class="popover-section">
+      <label>Elige una Forma</label>
+      <div class="shapes-types-grid">
+        <button class="shape-type-btn active" data-shape="rectangle" title="Rectángulo / Cuadrado">
+          <span class="shape-icon">⬛</span>
+          <span>Rectángulo</span>
+        </button>
+        <button class="shape-type-btn" data-shape="circle" title="Círculo / Elipse">
+          <span class="shape-icon">⭕</span>
+          <span>Círculo</span>
+        </button>
+        <button class="shape-type-btn" data-shape="line" title="Línea Recta">
+          <span class="shape-icon">📏</span>
+          <span>Línea</span>
+        </button>
+        <button class="shape-type-btn" data-shape="arrow" title="Flecha">
+          <span class="shape-icon">➡️</span>
+          <span>Flecha</span>
+        </button>
+        <button class="shape-type-btn" data-shape="triangle" title="Triángulo">
+          <span class="shape-icon">🔺</span>
+          <span>Triángulo</span>
+        </button>
+        <button class="shape-type-btn" data-shape="star" title="Estrella">
+          <span class="shape-icon">⭐</span>
+          <span>Estrella</span>
+        </button>
+        <button class="shape-type-btn" data-shape="hexagon" title="Hexágono">
+          <span class="shape-icon">⬡</span>
+          <span>Hexágono</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Opciones de Relleno de la Forma -->
+    <div class="popover-section">
+      <label>Modo de Relleno</label>
+      <div class="shape-fill-modes">
+        <button class="fill-mode-btn active" data-fill="none" title="Solo Borde / Sin Relleno">
+          <span>🚫 Sin Relleno</span>
+        </button>
+        <button class="fill-mode-btn" data-fill="semi" title="Relleno Translúcido (35%)">
+          <span>💧 Translúcido</span>
+        </button>
+        <button class="fill-mode-btn" data-fill="solid" title="Relleno Sólido (100%)">
+          <span>⬛ Sólido</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Grosor del Borde de la Forma -->
+    <div class="popover-section">
+      <div class="flex-between">
+        <label>Grosor del Borde</label>
+        <span class="preset-value-badge" id="shape-size-val">3px</span>
+      </div>
+      <div class="size-presets-row" id="shape-size-presets">
+        <button class="size-pill-btn" data-size="1">1px</button>
+        <button class="size-pill-btn active" data-size="3">3px</button>
+        <button class="size-pill-btn" data-size="6">6px</button>
+        <button class="size-pill-btn" data-size="12">12px</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POPOVER INTERACTIVO: BOTE DE PINTURA Y RELLENO -->
+  <div class="tool-config-popover" id="popover-fill-settings" style="display: none;">
+    <div class="popover-header">
+      <h4>Bote de Relleno de Color</h4>
+      <button class="btn-close-popover" id="btn-close-fill-popover">&times;</button>
+    </div>
+
+    <!-- Opacidad del Relleno -->
+    <div class="popover-section">
+      <label>Intensidad del Relleno</label>
+      <div class="shape-fill-modes">
+        <button class="bucket-opacity-btn active" data-opacity="1.0" title="Relleno Sólido">
+          <span>Sólido 100%</span>
+        </button>
+        <button class="bucket-opacity-btn" data-opacity="0.45" title="Relleno Translúcido">
+          <span>Acuarela 45%</span>
+        </button>
+        <button class="bucket-opacity-btn" data-opacity="0.25" title="Relleno Muy Suave">
+          <span>Pastel 25%</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="popover-section">
+      <p class="text-secondary" style="font-size: 11px; line-height: 1.4;">
+        👉 <strong>Cómo usar:</strong> Toca dentro de cualquier figura cerrada o trazo en el lienzo para rellenarlo instantáneamente con el color seleccionado.
+      </p>
+    </div>
+  </div>
+
+  <!-- Panel Flotante / Popover de Configuración de Papel y Cuadrícula -->
+  <div class="paper-config-popover" id="paper-config-popover" style="display: none;">
+    <div class="popover-header">
+      <h4>Personalizar Papel</h4>
+      <button class="btn-close-popover" id="btn-close-paper-popover">&times;</button>
+    </div>
+
+    <!-- 1. Color de Fondo del Papel -->
+    <div class="popover-section">
+      <label>Color de Fondo</label>
+      <div class="paper-color-presets">
+        <button class="paper-color-btn" data-color="#111827" style="background-color: #111827;" title="Gris Muy Oscuro / Pizarra"></button>
+        <button class="paper-color-btn" data-color="#ffffff" style="background-color: #ffffff; border-color: #cbd5e1;" title="Blanco Clásico"></button>
+        <button class="paper-color-btn active" data-color="#fdf6e2" style="background-color: #fdf6e2; border-color: #e2d7be;" title="Papel Beige / Marfil"></button>
+        <button class="paper-color-btn" data-color="#1e3a8a" style="background-color: #1e3a8a;" title="Azul Plano (Blueprint)"></button>
+        
+        <!-- Selector Libre de Color de Fondo -->
+        <label class="custom-color-picker-label" title="Cualquier Color Personalizado">
+          <input type="color" id="input-custom-bg-color" value="#fdf6e2" />
+          <span class="custom-color-indicator">🎨</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 2. Tipo de Patrón de Cuadrícula / Líneas -->
+    <div class="popover-section">
+      <label>Tipo de Cuadrícula</label>
+      <div class="pattern-type-grid">
+        <button class="pattern-type-btn" data-pattern="blank" title="Liso (Sin cuadrícula)">
+          <span>⬜ Liso</span>
+        </button>
+        <button class="pattern-type-btn active" data-pattern="grid" title="Cuadrícula / Cuadrados">
+          <span>🔲 Cuadrícula</span>
+        </button>
+        <button class="pattern-type-btn" data-pattern="lines" title="Líneas / Rayado">
+          <span>📑 Rayas</span>
+        </button>
+        <button class="pattern-type-btn" data-pattern="dots" title="Puntos">
+          <span>⠇ Puntos</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 3. Tamaño / Separación de la Cuadrícula -->
+    <div class="popover-section">
+      <div class="flex-between">
+        <label>Tamaño de Cuadrícula / Líneas</label>
+        <span class="grid-size-text" id="grid-size-text">28px</span>
+      </div>
+      <input type="range" id="input-grid-size" min="14" max="64" value="28" class="slider-grid-size" />
+    </div>
+  </div>
+
+  <!-- Barra Flotante de Acciones de Selección (Copiar, Duplicar, Mover, Recortar, Rotar, Eliminar, Dimensiones) -->
+  <div class="selection-actions-bar" id="selection-actions-bar" style="display: none;">
+    <span class="selection-dim-badge" id="selection-dim-badge" title="Dimensiones de los elementos seleccionados">📏 0 × 0</span>
+    <div class="separator-v"></div>
+    <button class="btn-sel-action btn-sel-crop" id="btn-sel-crop" style="display: none;" title="Recortar Foto Seleccionada">
+      <span>✂️ Recortar</span>
+    </button>
+    <button class="btn-sel-action" id="btn-sel-rotate-left" title="Rotar 90° a la izquierda (Antihorario)">
+      <span>⟲ -90°</span>
+    </button>
+    <button class="btn-sel-action" id="btn-sel-rotate-right" title="Rotar 90° a la derecha (Horario)">
+      <span>⟳ +90°</span>
+    </button>
+    <div class="separator-v"></div>
+    <button class="btn-sel-action" id="btn-sel-copy" title="Copiar Trazos">
+      <span>📋 Copiar</span>
+    </button>
+    <button class="btn-sel-action" id="btn-sel-paste" title="Pegar Trazos">
+      <span>📄 Pegar</span>
+    </button>
+    <button class="btn-sel-action" id="btn-sel-duplicate" title="Duplicar Trazos Seleccionados">
+      <span>📑 Duplicar</span>
+    </button>
+    <div class="separator-v"></div>
+    <button class="btn-sel-action text-danger" id="btn-sel-delete" title="Eliminar Selección">
+      <span>🗑️ Eliminar</span>
+    </button>
+    <button class="btn-sel-action" id="btn-sel-clear" title="Deseleccionar">
+      <span>✕</span>
+    </button>
   </div>
 
 
@@ -2278,11 +2282,11 @@
   <!-- LÃ³gica de AplicaciÃ³n AutÃ³noma (JavaScript EstÃ¡ndar MonolÃ­tico 100% Offline) -->
 
   <!-- Worker de PDF.js Embebido en Memoria (Cero Dependencias Externas / 100% Offline Tablet) -->
-    <script src="libs/pdf.min.js?v=1.0.3"></script>
-  <script src="js/storage.js?v=1.0.3"></script>
-  <script src="js/canvas.js?v=1.0.3"></script>
-  <script src="js/pdf-viewer.js?v=1.0.3"></script>
-  <script src="js/app.js?v=1.0.3"></script>
+    <script src="libs/pdf.min.js?v=1.0.6"></script>
+  <script src="js/storage.js?v=1.0.6"></script>
+  <script src="js/canvas.js?v=1.0.6"></script>
+  <script src="js/pdf-viewer.js?v=1.0.6"></script>
+  <script src="js/app.js?v=1.0.6"></script>
   <script>
     if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
       window.addEventListener('load', () => {

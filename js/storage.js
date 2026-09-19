@@ -1,4 +1,4 @@
-﻿// ===== GLOBAL TABLET RESILIENCE & ERROR CAPTURE =====
+// ===== GLOBAL TABLET RESILIENCE & ERROR CAPTURE =====
 window.addEventListener('error', (e) => {
   console.warn("Global JS notice:", e.message || e.error, "at line", e.lineno || '?');
 });
@@ -479,6 +479,25 @@ async function dbGetFolders() {
 }
 
 // ===== GESTIÓN DE CARPETAS Y SUBDIRECTORIOS FÍSICOS (FILE SYSTEM ACCESS API) =====
+async function verifyDirectoryPermission(dirHandle = state.deviceDirHandle, promptUser = true) {
+  if (!dirHandle) return false;
+  try {
+    const opts = { mode: 'readwrite' };
+    if (typeof dirHandle.queryPermission === 'function') {
+      const status = await dirHandle.queryPermission(opts);
+      if (status === 'granted') return true;
+      if (promptUser && typeof dirHandle.requestPermission === 'function') {
+        const reqStatus = await dirHandle.requestPermission(opts);
+        return reqStatus === 'granted';
+      }
+    }
+    return false;
+  } catch (err) {
+    console.warn('Error verificando permisos de directorio:', err);
+    return false;
+  }
+}
+
 function getFolderPath(folderId, allFolders = []) {
   const path = [];
   let curId = folderId;
@@ -501,8 +520,8 @@ async function getDirectoryHandleForFolder(folderId) {
     const cached = state.folderHandles.get(folderId);
     try {
       if (cached && typeof cached.queryPermission === 'function') {
-        await cached.queryPermission({ mode: 'readwrite' });
-        return cached;
+        const perm = await cached.queryPermission({ mode: 'readwrite' });
+        if (perm === 'granted') return cached;
       }
     } catch {}
   }
@@ -550,6 +569,7 @@ async function dbCreateFolder(name, color = '#f59e0b', parentId = null, syncToDi
   // 1. Creación física en disco con File System Access API
   if (syncToDisk && state.deviceDirHandle) {
     try {
+      await verifyDirectoryPermission(state.deviceDirHandle, false);
       const parentHandle = await getDirectoryHandleForFolder(parentId);
       if (parentHandle) {
         const cleanName = name.replace(/[/\\?%*:|"<>]/g, '_');
@@ -718,9 +738,10 @@ async function dbDeleteFolder(id) {
   // 1. Eliminación física en disco con File System Access API
   if (folderToDelete && state.deviceDirHandle) {
     try {
+      await verifyDirectoryPermission(state.deviceDirHandle, false);
       const parentHandle = await getDirectoryHandleForFolder(folderToDelete.parentId);
       if (parentHandle) {
-        const cleanName = folderToDelete.name.replace(/[/\\?%*:|"<>]/g, '_');
+        const cleanName = (folderToDelete.name || 'Carpeta').replace(/[/\\?%*:|"<>]/g, '_');
         await parentHandle.removeEntry(cleanName, { recursive: true }).catch(() => {});
         if (cleanName !== folderToDelete.name) {
           await parentHandle.removeEntry(folderToDelete.name, { recursive: true }).catch(() => {});
@@ -1319,11 +1340,12 @@ async function dbDeleteItem(id) {
   // 1. Eliminación física en disco con File System Access API
   if (itemToDelete && state.deviceDirHandle) {
     try {
+      await verifyDirectoryPermission(state.deviceDirHandle, false);
       const targetDirHandle = await getDirectoryHandleForFolder(itemToDelete.parentId);
       if (targetDirHandle) {
         const cleanName = (itemToDelete.name || 'documento').replace(/[/\\?%*:|"<>]/g, '_');
         const filename = itemToDelete._diskFileName || (itemToDelete.type === 'note' ? getNoteFileName(itemToDelete) : `${cleanName}.pdf`);
-        await targetDirHandle.removeEntry(filename).catch(() => {});
+        if (filename) await targetDirHandle.removeEntry(filename).catch(() => {});
         if (itemToDelete.name && itemToDelete.name !== filename) {
           await targetDirHandle.removeEntry(itemToDelete.name).catch(() => {});
         }
@@ -1332,6 +1354,9 @@ async function dbDeleteItem(id) {
           await targetDirHandle.removeEntry(`${cleanName}_${itemToDelete.id}.json`).catch(() => {});
         } else if (itemToDelete.type === 'pdf') {
           await targetDirHandle.removeEntry(`${cleanName}.pdf`).catch(() => {});
+          if (itemToDelete.pdfData && itemToDelete.pdfData.fileName) {
+            await targetDirHandle.removeEntry(itemToDelete.pdfData.fileName).catch(() => {});
+          }
         }
       }
     } catch (err) {

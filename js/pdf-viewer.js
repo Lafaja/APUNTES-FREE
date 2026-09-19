@@ -23,7 +23,7 @@ async function loadPdfEditor(pdfItem) {
   const stack = document.getElementById('pdf-pages-stack');
   if (stack) {
     stack.style.transform = '';
-    stack.style.transformOrigin = 'top center';
+    stack.style.transformOrigin = '0 0';
   }
   stack.innerHTML = '<div style="color: #94a3b8; padding: 40px; font-size: 15px; text-align: center;">Cargando documento PDF...</div>';
   const viewport = document.getElementById('pdf-continuous-viewport');

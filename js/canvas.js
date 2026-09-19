@@ -327,16 +327,29 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
     momentumAnimId = requestAnimationFrame(step);
   }
 
-  function setViewportZoom(newZoom) {
+  function setViewportZoom(newZoom, focalPoint = null) {
+    const prevZoom = currentZoom > 0 ? currentZoom : 1.0;
     currentZoom = Math.min(3.5, Math.max(0.4, newZoom));
     const cont = getActiveContainer();
+    const vp = getActiveViewport();
     if (cont) {
-      cont.style.transform = `scale(${currentZoom})`;
-      cont.style.transformOrigin = 'top center';
+      if (focalPoint && vp) {
+        const contRect = cont.getBoundingClientRect();
+        const zoomRatio = currentZoom / prevZoom;
+        const zoomDeltaX = (focalPoint.clientX - contRect.left) * (zoomRatio - 1);
+        const zoomDeltaY = (focalPoint.clientY - contRect.top) * (zoomRatio - 1);
+        cont.style.transformOrigin = '0 0';
+        cont.style.transform = `scale(${currentZoom})`;
+        vp.scrollLeft += zoomDeltaX;
+        vp.scrollTop += zoomDeltaY;
+      } else {
+        cont.style.transformOrigin = '0 0';
+        cont.style.transform = `scale(${currentZoom})`;
+      }
     }
     if (splitPane) {
       if (typeof applyPaneZoom === 'function') {
-        applyPaneZoom(splitPane, currentZoom);
+        applyPaneZoom(splitPane, currentZoom, focalPoint);
       }
       return;
     }
@@ -1534,14 +1547,14 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
   window.addEventListener('pointerup', stop, { signal });
   window.addEventListener('pointercancel', stop, { signal });
 
-  // Soporte para scroll con rueda de ratón / touchpad
+  // Soporte para scroll con rueda de ratón / touchpad con zoom centrado en cursor
   canvas.addEventListener('wheel', (e) => {
     const vp = getActiveViewport();
     if (!vp) return;
     if (e.ctrlKey) {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.08 : 0.92;
-      setViewportZoom(currentZoom * factor);
+      setViewportZoom(currentZoom * factor, { clientX: e.clientX, clientY: e.clientY });
     } else {
       vp.scrollTop += e.deltaY;
       vp.scrollLeft += e.deltaX;
@@ -1588,6 +1601,7 @@ function attachViewportTouchScroller(viewportEl) {
   let animId = null;
   let initDist = 0;
   let initZoom = 1.0;
+  let lastZoom = 1.0;
   let lastCenter = { x: 0, y: 0 };
 
   const stopVpMomentum = () => {
@@ -1632,6 +1646,7 @@ function attachViewportTouchScroller(viewportEl) {
       } else {
         initZoom = (state.currentView === 'pdf-editor' ? (state.pdf && state.pdf.scale) : (state.notes && state.notes.scale)) || 1.0;
       }
+      lastZoom = initZoom;
       lastCenter = { x: (touches[0].x + touches[1].x) / 2, y: (touches[0].y + touches[1].y) / 2 };
       return;
     }
@@ -1659,21 +1674,34 @@ function attachViewportTouchScroller(viewportEl) {
       const dist = Math.hypot(touches[1].x - touches[0].x, touches[1].y - touches[0].y);
       const center = { x: (touches[0].x + touches[1].x) / 2, y: (touches[0].y + touches[1].y) / 2 };
 
-      const dx = center.x - lastCenter.x;
-      const dy = center.y - lastCenter.y;
-      lastCenter = center;
+      const panDx = center.x - lastCenter.x;
+      const panDy = center.y - lastCenter.y;
 
-      viewportEl.scrollLeft -= dx;
-      viewportEl.scrollTop -= dy;
-
+      let targetZoom = lastZoom;
       if (initDist > 10 && dist > 10) {
         const factor = dist / initDist;
-        const targetZoom = Math.min(3.5, Math.max(0.4, initZoom * factor));
-        const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
-        if (cont) {
-          cont.style.transform = `scale(${targetZoom})`;
-          cont.style.transformOrigin = 'top center';
-        }
+        targetZoom = Math.min(3.5, Math.max(0.4, initZoom * factor));
+      }
+
+      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
+      if (cont) {
+        const contRect = cont.getBoundingClientRect();
+        const prevZoom = lastZoom > 0 ? lastZoom : 1.0;
+        const zoomRatio = targetZoom / prevZoom;
+
+        // Anclar el zoom exactamente en el centro de los dos dedos (center.x, center.y)
+        const zoomDeltaX = (center.x - contRect.left) * (zoomRatio - 1);
+        const zoomDeltaY = (center.y - contRect.top) * (zoomRatio - 1);
+
+        cont.style.transformOrigin = '0 0';
+        cont.style.transform = `scale(${targetZoom})`;
+
+        viewportEl.scrollLeft += zoomDeltaX - panDx;
+        viewportEl.scrollTop += zoomDeltaY - panDy;
+
+        lastZoom = targetZoom;
+        lastCenter = center;
+
         if (state.currentView === 'pdf-editor') {
           if (state.pdf) state.pdf.scale = targetZoom;
           if (state.activeItem) {
@@ -1691,6 +1719,10 @@ function attachViewportTouchScroller(viewportEl) {
           const zoomText = document.getElementById('zoom-percentage');
           if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
         }
+      } else {
+        viewportEl.scrollLeft -= panDx;
+        viewportEl.scrollTop -= panDy;
+        lastCenter = center;
       }
       return;
     }
@@ -1743,8 +1775,17 @@ function attachViewportTouchScroller(viewportEl) {
       const factor = e.deltaY < 0 ? 1.08 : 0.92;
       const targetZoom = Math.min(3.5, Math.max(0.4, curZ * factor));
       if (cont) {
+        const contRect = cont.getBoundingClientRect();
+        const prevZoom = curZ > 0 ? curZ : 1.0;
+        const zoomRatio = targetZoom / prevZoom;
+        const zoomDeltaX = (e.clientX - contRect.left) * (zoomRatio - 1);
+        const zoomDeltaY = (e.clientY - contRect.top) * (zoomRatio - 1);
+
+        cont.style.transformOrigin = '0 0';
         cont.style.transform = `scale(${targetZoom})`;
-        cont.style.transformOrigin = 'top center';
+
+        viewportEl.scrollLeft += zoomDeltaX;
+        viewportEl.scrollTop += zoomDeltaY;
       }
       if (state.currentView === 'pdf-editor') {
         if (state.pdf) state.pdf.scale = targetZoom;
