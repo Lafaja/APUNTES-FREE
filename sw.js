@@ -1,5 +1,5 @@
 // Service Worker - Tablet Studio PWA (Cache-First / 100% Offline Resilience)
-const CACHE_NAME = 'tablet-studio-v1.0.9';
+const CACHE_NAME = 'tablet-studio-v1.0.10';
 
 const ASSETS_TO_CACHE = [
   './',
