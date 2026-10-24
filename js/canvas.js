@@ -144,6 +144,11 @@ function syncImageStroke(s, img = null) {
 
 const globalActiveTouches = new Map();
 
+// Avisar a los motores de dibujo de que cambió el zoom (regeneran su capa nítida al terminar)
+function notifyInkViewportChange() {
+  window.dispatchEvent(new Event('ink-viewport-change'));
+}
+
 function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onExtendCanvasHeight, scrollContainer, containerElement, getImages, onImagesChange, getTargetDoc, splitPane = null) {
   const abortController = new AbortController();
   const { signal } = abortController;
@@ -342,14 +347,17 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
         cont.style.transform = `scale(${currentZoom})`;
         vp.scrollLeft += zoomDeltaX;
         vp.scrollTop += zoomDeltaY;
+        notifyInkViewportChange();
       } else {
         cont.style.transformOrigin = '0 0';
         cont.style.transform = `scale(${currentZoom})`;
+        notifyInkViewportChange();
       }
     }
     if (splitPane) {
+      // El zoom y el desplazamiento ya están aplicados: solo actualizar estado e indicador del panel
       if (typeof applyPaneZoom === 'function') {
-        applyPaneZoom(splitPane, currentZoom, focalPoint);
+        applyPaneZoom(splitPane, currentZoom);
       }
       return;
     }
@@ -373,31 +381,125 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
     }
   }
 
-  function getPoint(e) {
+  // Rectángulo del lienzo cacheado durante un trazo: evita forzar el layout en cada muestra del lápiz
+  let cachedPointRect = null;
+
+  function measurePointRect() {
     const rect = canvas.getBoundingClientRect();
     const dpr = Math.max(window.devicePixelRatio || 1, 2);
     const cssWidth = parseFloat(canvas.style.width) || (rect.width > 0 ? (canvas.width / dpr) : canvas.width);
     const cssHeight = parseFloat(canvas.style.height) || (rect.height > 0 ? (canvas.height / dpr) : canvas.height);
-    const scaleX = rect.width > 0 ? (cssWidth / rect.width) : 1;
-    const scaleY = rect.height > 0 ? (cssHeight / rect.height) : 1;
     return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
+      left: rect.left,
+      top: rect.top,
+      scaleX: rect.width > 0 ? (cssWidth / rect.width) : 1,
+      scaleY: rect.height > 0 ? (cssHeight / rect.height) : 1
+    };
+  }
+
+  function getPoint(e) {
+    const r = (isDrawing && currentStroke && cachedPointRect) || measurePointRect();
+    return {
+      x: (e.clientX - r.left) * r.scaleX,
+      y: (e.clientY - r.top) * r.scaleY,
       pressure: (e.pressure !== undefined && e.pressure > 0) ? e.pressure : 0.5
     };
   }
 
-  function redraw() {
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = Math.max(window.devicePixelRatio || 1, 2);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(dpr, dpr);
+  // Dibuja un trazo vectorial (lápiz, subrayador, forma o relleno) en coordenadas del lienzo
+  function paintStroke(ctx, s) {
+    if (!s || s.isImage || s.tool === 'eraser') return;
+    if (!s.points || s.points.length === 0) return;
 
+    ctx.save();
+    ctx.beginPath();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const brush = s.brushType || s.tool;
+
+    // Relleno de Formas si aplica
+    if (s.isShape && (s.fillMode === 'semi' || s.fillMode === 'solid')) {
+      ctx.fillStyle = s.fillColor || s.color;
+      ctx.globalAlpha = s.fillMode === 'semi' ? 0.35 : (s.opacity || 1.0);
+      ctx.moveTo(s.points[0].x, s.points[0].y);
+      for (let i = 1; i < s.points.length; i++) {
+        ctx.lineTo(s.points[i].x, s.points[i].y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+    }
+
+    // Relleno por Bote de Pintura
+    if (s.isFill) {
+      ctx.fillStyle = s.fillColor || s.color;
+      ctx.globalAlpha = s.fillOpacity || 1.0;
+      ctx.moveTo(s.points[0].x, s.points[0].y);
+      for (let i = 1; i < s.points.length; i++) {
+        ctx.lineTo(s.points[i].x, s.points[i].y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    // Trazos estándar
+    if (brush === 'highlighter' || s.tool === 'highlighter') {
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = 0.45;
+      ctx.lineWidth = s.size * 3.2;
+    } else if (brush === 'pencil') {
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = 0.65;
+      ctx.lineWidth = s.size;
+    } else if (brush === 'fountain') {
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = s.size * 1.25;
+    } else {
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = s.size;
+    }
+
+    const pts = s.points;
+    if (pts.length === 1) {
+      ctx.arc(pts[0].x, pts[0].y, s.size / 2, 0, Math.PI * 2);
+      ctx.fillStyle = s.color;
+      ctx.fill();
+    } else if (s.isShape) {
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.stroke();
+    } else if (pts.length === 2) {
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[1].x, pts[1].y);
+      ctx.stroke();
+    } else {
+      // Trazado ultrasuave con curvas Bézier cuadráticas usando puntos medios consecutivos
+      ctx.moveTo(pts[0].x, pts[0].y);
+      const mid0 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      ctx.lineTo(mid0.x, mid0.y);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const xc = (pts[i].x + pts[i + 1].x) / 2;
+        const yc = (pts[i].y + pts[i + 1].y) / 2;
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+      }
+      ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Dibuja imágenes y trazos del lienzo en un contexto ya transformado a coordenadas del lienzo
+  function paintScene(ctx) {
     const rawStrokes = [...getStrokes()];
-    if (currentStroke) rawStrokes.push(currentStroke);
+    // El trazo en curso va en la capa en vivo; solo se pinta aquí si esa capa no está disponible
+    if (currentStroke && !liveLayer.rect) rawStrokes.push(currentStroke);
 
     // 1. ITERAR Y DIBUJAR TODAS LAS IMÁGENES DEL LIENZO ACTIVO
     const imagesToDraw = [...fetchImages(), ...rawStrokes.filter(s => s && s.isImage)];
@@ -432,97 +534,223 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       }
     });
 
-    // 3. ENCIMA DE LAS IMÁGENES, PINTAR LOS TRAZOS VECTORIALES DE LÁPIZ Y SUBRAYADOR
-    const vectorStrokes = rawStrokes.filter(s => s && !s.isImage);
-    vectorStrokes.forEach(s => {
-      if (s.tool === 'eraser') return;
-      if (!s.points || s.points.length === 0) return;
+    // 2. ENCIMA DE LAS IMÁGENES, PINTAR LOS TRAZOS VECTORIALES DE LÁPIZ Y SUBRAYADOR
+    rawStrokes.forEach(s => {
+      if (s && !s.isImage) paintStroke(ctx, s);
+    });
+  }
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+  // ===== CAPAS DE ALTA RESOLUCIÓN =====
+  // hdLayer: repinta la zona visible a la resolución real de la pantalla cuando hay zoom (sin pixelado).
+  // liveLayer: pinta solo el trazo en curso, sin repintar todo el lienzo (menos retraso del lápiz).
+  const INK_LAYER_MAX_PIXELS = 12000000;
+  const hdLayer = { el: null, ctx: null, rect: null, k: 1 };
+  const liveLayer = { el: null, ctx: null, rect: null, k: 1 };
+  let predictedPoints = [];
+  let hdTimer = null;
+  let liveFrameId = null;
 
-      const brush = s.brushType || s.tool;
+  function getCanvasCssSize() {
+    const dpr = Math.max(window.devicePixelRatio || 1, 2);
+    return {
+      w: parseFloat(canvas.style.width) || canvas.width / dpr,
+      h: parseFloat(canvas.style.height) || canvas.height / dpr
+    };
+  }
 
-      // Relleno de Formas si aplica
-      if (s.isShape && (s.fillMode === 'semi' || s.fillMode === 'solid')) {
-        ctx.fillStyle = s.fillColor || s.color;
-        ctx.globalAlpha = s.fillMode === 'semi' ? 0.35 : (s.opacity || 1.0);
-        ctx.moveTo(s.points[0].x, s.points[0].y);
-        for (let i = 1; i < s.points.length; i++) {
-          ctx.lineTo(s.points[i].x, s.points[i].y);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-      }
+  // Zona visible del lienzo (en coordenadas del lienzo) y píxeles de pantalla por unidad (s)
+  function getVisibleCanvasRect() {
+    if (!canvas.isConnected) return null;
+    const cr = canvas.getBoundingClientRect();
+    const { w, h } = getCanvasCssSize();
+    if (!cr.width || !w) return null;
+    const vp = getActiveViewport();
+    const vr = vp ? vp.getBoundingClientRect() : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+    const s = cr.width / w;
+    const x0 = Math.max(0, (Math.max(vr.left, 0) - cr.left) / s);
+    const y0 = Math.max(0, (Math.max(vr.top, 0) - cr.top) / s);
+    const x1 = Math.min(w, (Math.min(vr.right, window.innerWidth) - cr.left) / s);
+    const y1 = Math.min(h, (Math.min(vr.bottom, window.innerHeight) - cr.top) / s);
+    if (x1 <= x0 || y1 <= y0) return null;
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, s, cssW: w, cssH: h };
+  }
 
-      // Relleno por Bote de Pintura
-      if (s.isFill) {
-        ctx.fillStyle = s.fillColor || s.color;
-        ctx.globalAlpha = s.fillOpacity || 1.0;
-        ctx.moveTo(s.points[0].x, s.points[0].y);
-        for (let i = 1; i < s.points.length; i++) {
-          ctx.lineTo(s.points[i].x, s.points[i].y);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
+  function capLayerScale(rect, k) {
+    const px = rect.w * rect.h * k * k;
+    return px > INK_LAYER_MAX_PIXELS ? Math.sqrt(INK_LAYER_MAX_PIXELS / (rect.w * rect.h)) : k;
+  }
+
+  function ensureLayer(layer, cls) {
+    if (layer.el && layer.el.isConnected) return true;
+    const parent = canvas.parentElement;
+    if (!parent) return false;
+    const el = document.createElement('canvas');
+    el.className = cls;
+    el.style.position = 'absolute';
+    el.style.pointerEvents = 'none';
+    const z = getComputedStyle(canvas).zIndex;
+    if (z && z !== 'auto') el.style.zIndex = z;
+    // Orden fijo: lienzo base < capa nítida < trazo en vivo (todas por debajo de la capa de selección)
+    const after = (layer === liveLayer && hdLayer.el && hdLayer.el.isConnected) ? hdLayer.el : canvas;
+    parent.insertBefore(el, after.nextSibling);
+    layer.el = el;
+    layer.ctx = el.getContext('2d');
+    return true;
+  }
+
+  function placeLayer(layer, rect, k) {
+    const el = layer.el;
+    const bw = Math.max(1, Math.ceil(rect.w * k));
+    const bh = Math.max(1, Math.ceil(rect.h * k));
+    if (el.width !== bw) el.width = bw;
+    if (el.height !== bh) el.height = bh;
+    el.style.left = `${canvas.offsetLeft + rect.x}px`;
+    el.style.top = `${canvas.offsetTop + rect.y}px`;
+    el.style.width = `${bw / k}px`;
+    el.style.height = `${bh / k}px`;
+    el.style.display = '';
+    layer.rect = rect;
+    layer.k = k;
+  }
+
+  function beginLayerPaint(layer) {
+    const { ctx, k, rect } = layer;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, layer.el.width, layer.el.height);
+    ctx.setTransform(k, 0, 0, k, -rect.x * k, -rect.y * k);
+  }
+
+  function hideHdLayer() {
+    if (hdLayer.el) hdLayer.el.style.display = 'none';
+    hdLayer.rect = null;
+    setBaseMaskHole(null);
+  }
+
+  // Ocultar el lienzo base bajo la capa nítida con una máscara de 4 bandas alrededor del hueco.
+  // (clip-path no sirve: lo recortado deja de recibir el lápiz; la máscara no afecta a los toques)
+  function setBaseMaskHole(hole) {
+    const st = canvas.style;
+    if (!hole) {
+      st.webkitMaskImage = st.maskImage = '';
+      st.webkitMaskRepeat = st.maskRepeat = '';
+      st.webkitMaskPosition = st.maskPosition = '';
+      st.webkitMaskSize = st.maskSize = '';
+      return;
+    }
+    const { x0, y0, x1, y1 } = hole;
+    const big = 1000000;
+    const g = 'linear-gradient(#000, #000)';
+    st.webkitMaskImage = st.maskImage = [g, g, g, g].join(', ');
+    st.webkitMaskRepeat = st.maskRepeat = 'no-repeat';
+    st.webkitMaskPosition = st.maskPosition = `0px 0px, 0px ${y1}px, 0px ${y0}px, ${x1}px ${y0}px`;
+    st.webkitMaskSize = st.maskSize = `100% ${y0}px, 100% ${big}px, ${x0}px ${y1 - y0}px, ${big}px ${y1 - y0}px`;
+  }
+
+  function paintHdLayer() {
+    if (!hdLayer.rect || !hdLayer.ctx) return;
+    beginLayerPaint(hdLayer);
+    paintScene(hdLayer.ctx);
+  }
+
+  function updateHdLayer() {
+    const vis = getVisibleCanvasRect();
+    const baseDpr = Math.max(window.devicePixelRatio || 1, 2);
+    const wantK = vis ? vis.s * (window.devicePixelRatio || 1) : 0;
+    if (!vis || wantK <= baseDpr * 1.1) {
+      hideHdLayer();
+      return;
+    }
+    // Margen alrededor de lo visible para que al desplazarse un poco siga nítido
+    const mx = vis.w * 0.25;
+    const my = vis.h * 0.25;
+    const x = Math.max(0, vis.x - mx);
+    const y = Math.max(0, vis.y - my);
+    const rect = { x, y, w: Math.min(vis.cssW, vis.x + vis.w + mx) - x, h: Math.min(vis.cssH, vis.y + vis.h + my) - y };
+    const k = capLayerScale(rect, wantK);
+    if (k <= baseDpr * 1.1 || !ensureLayer(hdLayer, 'ink-hd-layer')) {
+      hideHdLayer();
+      return;
+    }
+    placeLayer(hdLayer, rect, k);
+    paintHdLayer();
+
+    // Ocultar el lienzo base bajo la capa nítida (solapando 1px de pantalla para no dejar costuras)
+    const inset = 1 / vis.s;
+    const x0 = rect.x + inset, y0 = rect.y + inset;
+    const x1 = rect.x + rect.w - inset, y1 = rect.y + rect.h - inset;
+    setBaseMaskHole({ x0, y0, x1, y1 });
+  }
+
+  function scheduleHdUpdate(delay = 140) {
+    clearTimeout(hdTimer);
+    hdTimer = setTimeout(() => {
+      hdTimer = null;
+      if (isDrawing) {
+        scheduleHdUpdate(delay);
         return;
       }
+      updateHdLayer();
+    }, delay);
+  }
 
-      // Trazos estándar
-      if (brush === 'highlighter' || s.tool === 'highlighter') {
-        ctx.strokeStyle = s.color;
-        ctx.globalAlpha = 0.45;
-        ctx.lineWidth = s.size * 3.2;
-      } else if (brush === 'pencil') {
-        ctx.strokeStyle = s.color;
-        ctx.globalAlpha = 0.65;
-        ctx.lineWidth = s.size;
-      } else if (brush === 'fountain') {
-        ctx.strokeStyle = s.color;
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = s.size * 1.25;
-      } else {
-        ctx.strokeStyle = s.color;
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = s.size;
-      }
-
-      const pts = s.points;
-      if (pts.length === 1) {
-        ctx.arc(pts[0].x, pts[0].y, s.size / 2, 0, Math.PI * 2);
-        ctx.fillStyle = s.color;
-        ctx.fill();
-      } else if (s.isShape) {
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length; i++) {
-          ctx.lineTo(pts[i].x, pts[i].y);
-        }
-        ctx.stroke();
-      } else if (pts.length === 2) {
-        ctx.moveTo(pts[0].x, pts[0].y);
-        ctx.lineTo(pts[1].x, pts[1].y);
-        ctx.stroke();
-      } else {
-        // Trazado ultrasuave con curvas Bézier cuadráticas usando puntos medios consecutivos
-        ctx.moveTo(pts[0].x, pts[0].y);
-        const mid0 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-        ctx.lineTo(mid0.x, mid0.y);
-        for (let i = 1; i < pts.length - 1; i++) {
-          const xc = (pts[i].x + pts[i + 1].x) / 2;
-          const yc = (pts[i].y + pts[i + 1].y) / 2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-        }
-        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        ctx.stroke();
-      }
-      ctx.restore();
+  function requestLiveRedraw() {
+    if (liveFrameId !== null) return;
+    liveFrameId = requestAnimationFrame(() => {
+      liveFrameId = null;
+      renderLive();
     });
+  }
 
-    // 4. FINALMENTE, SI HAY UNA IMAGEN O SELECCIÓN ACTIVA, DIBUJAR ENCIMA SU CAJA Y TIRADORES DE AJUSTE
+  function cancelLiveRedraw() {
+    if (liveFrameId !== null) {
+      cancelAnimationFrame(liveFrameId);
+      liveFrameId = null;
+    }
+  }
+
+  // Preparar la capa en vivo sobre la zona visible al empezar un trazo
+  function beginLiveStroke() {
+    predictedPoints = [];
+    const vis = getVisibleCanvasRect();
+    if (!vis || !ensureLayer(liveLayer, 'ink-live-layer')) {
+      liveLayer.rect = null;
+      return;
+    }
+    const baseDpr = Math.max(window.devicePixelRatio || 1, 2);
+    placeLayer(liveLayer, vis, capLayerScale(vis, Math.max(baseDpr, vis.s * (window.devicePixelRatio || 1))));
+  }
+
+  function renderLive() {
+    if (!liveLayer.rect || !liveLayer.ctx) return;
+    if (!currentStroke) {
+      liveLayer.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      liveLayer.ctx.clearRect(0, 0, liveLayer.el.width, liveLayer.el.height);
+      liveLayer.el.style.display = 'none';
+      liveLayer.rect = null;
+      predictedPoints = [];
+      return;
+    }
+    beginLayerPaint(liveLayer);
+    // Los puntos predichos por el navegador adelantan la punta del trazo (no se guardan)
+    const s = predictedPoints.length
+      ? Object.assign({}, currentStroke, { points: currentStroke.points.concat(predictedPoints) })
+      : currentStroke;
+    paintStroke(liveLayer.ctx, s);
+  }
+
+  function redraw() {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = Math.max(window.devicePixelRatio || 1, 2);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+    paintScene(ctx);
+    paintHdLayer();
+    renderLive();
+
+    // 3. FINALMENTE, SI HAY UNA IMAGEN O SELECCIÓN ACTIVA, DIBUJAR ENCIMA SU CAJA Y TIRADORES DE AJUSTE
     if (state.notes.selectionBounds && (state.notes.isSelectionActive || state.notes.selectedImageId)) {
       drawSelectionBounds(state.notes.selectionBounds);
     }
@@ -836,6 +1064,7 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
 
     // 2. DETECCIÓN DE DOS DEDOS: BLOQUEAR TRAZO
     if (globalActiveTouches.size >= 2) {
+      if (typeof radialMenuCancelWatch === 'function') radialMenuCancelWatch();
       if (isDrawing || currentStroke) {
         isDrawing = false;
         currentStroke = null;
@@ -889,6 +1118,8 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
 
     if ((isStylusOnlyMode && isTouchInput) || isPanTool) {
       // Dejar que attachViewportTouchScroller gestione el desplazamiento y zoom táctil en el viewport
+      // (un dedo quieto puede abrir el menú circular si está activado en Ajustes)
+      if (typeof radialMenuWatch === 'function') radialMenuWatch(e, () => true);
       return;
     }
 
@@ -896,6 +1127,11 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
     if (state.notes.tool === 'pan') return;
 
     e.preventDefault();
+
+    // Mantener pulsado sin moverse abre el menú circular de herramientas y colores
+    if (state.notes.tool !== 'fill' && typeof radialMenuWatch === 'function') {
+      radialMenuWatch(e, abortGestureForRadialMenu);
+    }
 
     try {
       canvas.setPointerCapture(e.pointerId);
@@ -1078,9 +1314,10 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       return;
     }
 
-    // MODO DIBUJO ESTÁNDAR
+    // MODO DIBUJO ESTÁNDAR (la instantánea de deshacer se toma al terminar el trazo)
     isDrawing = true;
-    recordUndoSnapshot();
+    cachedPointRect = measurePointRect();
+    rawUpdateSeen = false;
 
     currentStroke = {
       id: `s_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -1092,8 +1329,71 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
       points: [pt]
     };
 
-    redraw();
+    beginLiveStroke();
+    if (liveLayer.rect) renderLive();
+    else redraw();
   }, { signal });
+
+  // Al abrirse el menú circular se descarta el gesto en curso (un punto o lazo sin mover)
+  function abortGestureForRadialMenu() {
+    if (isDraggingSelected || isResizingSelected) return false;
+    if (state.notes.tool === 'eraser' && eraserModified) return false;
+    const hadStroke = !!currentStroke;
+    isDrawing = false;
+    currentStroke = null;
+    cachedPointRect = null;
+    cancelLiveRedraw();
+    if (isLassoing || isSelecting || isDrawingShape) {
+      isLassoing = false;
+      isSelecting = false;
+      isDrawingShape = false;
+      clearSelectionOverlay();
+    }
+    if (hadStroke) {
+      cancelPendingRedraw();
+      redraw();
+    }
+    return true;
+  }
+
+  // Añadir muestras del lápiz al trazo en curso. La distancia mínima es de ~0.35 px de pantalla,
+  // así que con zoom se conserva todo el detalle de la escritura
+  let rawUpdateSeen = false;
+  function appendStrokeSamples(e) {
+    const coalesced = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : [];
+    const samples = coalesced.length > 0 ? coalesced : [e];
+    const minDist = 0.35 * ((cachedPointRect && cachedPointRect.scaleX) || 1);
+    let added = false;
+    for (let i = 0; i < samples.length; i++) {
+      const samplePt = getPoint(samples[i]);
+      const lastPt = currentStroke.points[currentStroke.points.length - 1];
+      if (!lastPt || Math.hypot(samplePt.x - lastPt.x, samplePt.y - lastPt.y) >= minDist) {
+        currentStroke.points.push(samplePt);
+        added = true;
+      }
+    }
+    const predicted = (typeof e.getPredictedEvents === 'function') ? e.getPredictedEvents() : [];
+    predictedPoints = predicted.slice(0, 2).map(getPoint);
+    if (added || predicted.length) requestLiveRedraw();
+  }
+
+  // pointerrawupdate llega antes y más a menudo que pointermove: menos retraso entre punta y tinta
+  if ('onpointerrawupdate' in window) {
+    canvas.addEventListener('pointerrawupdate', (e) => {
+      if (!isDrawing || !currentStroke || globalActiveTouches.size >= 2) return;
+      rawUpdateSeen = true;
+      appendStrokeSamples(e);
+    }, { signal });
+  }
+
+  // Si el contenedor se desplaza o cambia el zoom, recalcular posiciones y regenerar la capa nítida
+  document.addEventListener('scroll', () => {
+    cachedPointRect = null;
+    scheduleHdUpdate();
+  }, { capture: true, passive: true, signal });
+  window.addEventListener('ink-viewport-change', () => scheduleHdUpdate(), { signal });
+  window.addEventListener('resize', () => scheduleHdUpdate(), { signal });
+  scheduleHdUpdate(250);
 
   // Pointer Move
   canvas.addEventListener('pointermove', (e) => {
@@ -1369,19 +1669,9 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
     }
 
     // Dibujar trazo con fidelidad de muestras coalescentes y refresco ultra-fluido en RAF
-    if (isDrawing && currentStroke) {
-      let added = false;
-      for (let i = 0; i < moveEvents.length; i++) {
-        const samplePt = getPoint(moveEvents[i]);
-        const lastPt = currentStroke.points[currentStroke.points.length - 1];
-        if (!lastPt || Math.hypot(samplePt.x - lastPt.x, samplePt.y - lastPt.y) >= 0.5) {
-          currentStroke.points.push(samplePt);
-          added = true;
-        }
-      }
-      if (added) {
-        requestRedraw();
-      }
+    // (si el navegador ya entrega pointerrawupdate, las muestras se recogen allí)
+    if (isDrawing && currentStroke && !rawUpdateSeen) {
+      appendStrokeSamples(e);
     }
   });
 
@@ -1525,7 +1815,10 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
 
     if (isDrawing) {
       isDrawing = false;
+      cachedPointRect = null;
+      cancelLiveRedraw();
       if (currentStroke && currentStroke.points.length > 0) {
+        recordUndoSnapshot();
         let maxStrokeY = 0;
         for (let i = 0; i < currentStroke.points.length; i++) {
           if (currentStroke.points[i].y > maxStrokeY) maxStrokeY = currentStroke.points[i].y;
@@ -1564,8 +1857,15 @@ function setupDrawingEngine(canvas, selCanvas, getStrokes, onStrokesChange, onEx
   function destroy() {
     stopMomentum();
     cancelPendingRedraw();
+    cancelLiveRedraw();
+    clearTimeout(hdTimer);
     deselectAll();
     abortController.abort();
+    if (hdLayer.el) hdLayer.el.remove();
+    if (liveLayer.el) liveLayer.el.remove();
+    hdLayer.rect = null;
+    liveLayer.rect = null;
+    setBaseMaskHole(null);
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1604,6 +1904,37 @@ function attachViewportTouchScroller(viewportEl) {
   let lastZoom = 1.0;
   let lastCenter = { x: 0, y: 0 };
 
+  // Panel de vista dividida al que pertenece este viewport (o null)
+  const splitPaneId = viewportEl.id === 'split-content-left' ? 'left' : (viewportEl.id === 'split-content-right' ? 'right' : null);
+
+  // Guardar el zoom aplicado en el estado de la vista correspondiente y actualizar su indicador
+  const syncZoomState = (targetZoom) => {
+    if (splitPaneId) {
+      if (splitPaneId === 'left') state.split.leftScale = targetZoom;
+      else state.split.rightScale = targetZoom;
+      const splitText = document.getElementById(`split-${splitPaneId}-zoom-text`);
+      if (splitText) splitText.textContent = `${Math.round(targetZoom * 100)}%`;
+      return;
+    }
+    if (state.currentView === 'pdf-editor') {
+      if (state.pdf) state.pdf.scale = targetZoom;
+      if (state.activeItem) {
+        if (!state.activeItem.viewport) state.activeItem.viewport = {};
+        state.activeItem.viewport.zoom = targetZoom;
+      }
+      const zoomText = document.getElementById('pdf-zoom-text');
+      if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
+    } else {
+      if (state.notes) state.notes.scale = targetZoom;
+      if (state.activeItem) {
+        if (!state.activeItem.viewport) state.activeItem.viewport = {};
+        state.activeItem.viewport.zoom = targetZoom;
+      }
+      const zoomText = document.getElementById('zoom-percentage');
+      if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
+    }
+  };
+
   const stopVpMomentum = () => {
     if (animId) {
       cancelAnimationFrame(animId);
@@ -1639,7 +1970,7 @@ function attachViewportTouchScroller(viewportEl) {
       isTouchPanning = false;
       const touches = Array.from(globalActiveTouches.values());
       initDist = Math.hypot(touches[1].x - touches[0].x, touches[1].y - touches[0].y) || 1;
-      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
+      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .notes-viewport-inner, .split-pane-content');
       if (cont && cont.style.transform) {
         const m = cont.style.transform.match(/scale\(\s*([0-9.]+)\s*\)/);
         initZoom = m && parseFloat(m[1]) ? parseFloat(m[1]) : ((state.currentView === 'pdf-editor' ? (state.pdf && state.pdf.scale) : (state.notes && state.notes.scale)) || 1.0);
@@ -1664,6 +1995,8 @@ function attachViewportTouchScroller(viewportEl) {
   }, { passive: true });
 
   viewportEl.addEventListener('pointermove', (e) => {
+    // Con el menú circular abierto, el dedo elige opción en vez de desplazar la página
+    if (typeof isRadialMenuOpen === 'function' && isRadialMenuOpen()) return;
     if (e.pointerType === 'touch' && globalActiveTouches.has(e.pointerId)) {
       globalActiveTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
@@ -1683,7 +2016,7 @@ function attachViewportTouchScroller(viewportEl) {
         targetZoom = Math.min(3.5, Math.max(0.4, initZoom * factor));
       }
 
-      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
+      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .notes-viewport-inner, .split-pane-content');
       if (cont) {
         const contRect = cont.getBoundingClientRect();
         const prevZoom = lastZoom > 0 ? lastZoom : 1.0;
@@ -1695,30 +2028,14 @@ function attachViewportTouchScroller(viewportEl) {
 
         cont.style.transformOrigin = '0 0';
         cont.style.transform = `scale(${targetZoom})`;
+        if (typeof notifyInkViewportChange === 'function') notifyInkViewportChange();
 
         viewportEl.scrollLeft += zoomDeltaX - panDx;
         viewportEl.scrollTop += zoomDeltaY - panDy;
 
         lastZoom = targetZoom;
         lastCenter = center;
-
-        if (state.currentView === 'pdf-editor') {
-          if (state.pdf) state.pdf.scale = targetZoom;
-          if (state.activeItem) {
-            if (!state.activeItem.viewport) state.activeItem.viewport = {};
-            state.activeItem.viewport.zoom = targetZoom;
-          }
-          const zoomText = document.getElementById('pdf-zoom-text');
-          if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
-        } else {
-          if (state.notes) state.notes.scale = targetZoom;
-          if (state.activeItem) {
-            if (!state.activeItem.viewport) state.activeItem.viewport = {};
-            state.activeItem.viewport.zoom = targetZoom;
-          }
-          const zoomText = document.getElementById('zoom-percentage');
-          if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
-        }
+        syncZoomState(targetZoom);
       } else {
         viewportEl.scrollLeft -= panDx;
         viewportEl.scrollTop -= panDy;
@@ -1764,7 +2081,7 @@ function attachViewportTouchScroller(viewportEl) {
   viewportEl.addEventListener('wheel', (e) => {
     if (e.ctrlKey) {
       e.preventDefault();
-      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .split-pane-content');
+      const cont = viewportEl.querySelector('.pdf-pages-stack, .notes-container, .notes-viewport-inner, .split-pane-content');
       let curZ = 1.0;
       if (cont && cont.style.transform) {
         const m = cont.style.transform.match(/scale\(\s*([0-9.]+)\s*\)/);
@@ -1783,27 +2100,12 @@ function attachViewportTouchScroller(viewportEl) {
 
         cont.style.transformOrigin = '0 0';
         cont.style.transform = `scale(${targetZoom})`;
+        if (typeof notifyInkViewportChange === 'function') notifyInkViewportChange();
 
         viewportEl.scrollLeft += zoomDeltaX;
         viewportEl.scrollTop += zoomDeltaY;
       }
-      if (state.currentView === 'pdf-editor') {
-        if (state.pdf) state.pdf.scale = targetZoom;
-        if (state.activeItem) {
-          if (!state.activeItem.viewport) state.activeItem.viewport = {};
-          state.activeItem.viewport.zoom = targetZoom;
-        }
-        const zoomText = document.getElementById('pdf-zoom-text');
-        if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
-      } else {
-        if (state.notes) state.notes.scale = targetZoom;
-        if (state.activeItem) {
-          if (!state.activeItem.viewport) state.activeItem.viewport = {};
-          state.activeItem.viewport.zoom = targetZoom;
-        }
-        const zoomText = document.getElementById('zoom-percentage');
-        if (zoomText) zoomText.textContent = `${Math.round(targetZoom * 100)}%`;
-      }
+      syncZoomState(targetZoom);
     }
   }, { passive: false });
 }

@@ -13,7 +13,7 @@
 
   <!-- Estilos Embebidos AutÃ³nomos (Sin dependencias externas ni CORS) -->
     <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="css/styles.css?v=1.0.7">
+  <link rel="stylesheet" href="css/styles.css?v=1.0.9">
 
 </head>
 <body>
@@ -1228,10 +1228,16 @@
         <button class="btn-close-modal" id="btn-close-modal-settings">&times;</button>
       </div>
 
+      <div class="settings-tabs" role="tablist">
+        <button type="button" class="settings-tab active" role="tab" data-settings-tab="document">📐 Documento</button>
+        <button type="button" class="settings-tab" role="tab" data-settings-tab="input">🖊️ Lápiz y táctil</button>
+        <button type="button" class="settings-tab" role="tab" data-settings-tab="storage">📂 Almacenamiento</button>
+        <button type="button" class="settings-tab" role="tab" data-settings-tab="app">📲 Aplicación</button>
+      </div>
+
       <div class="modal-body-content settings-tablet-body">
-        <div class="settings-two-col-grid">
-          <!-- Columna Izquierda: Unidades de Medida y Vista Previa -->
-          <div class="settings-col">
+          <!-- Pestaña: Documento (unidades de medida y vista previa) -->
+          <div class="settings-panel active" role="tabpanel" data-settings-panel="document">
             <div class="form-group">
               <label>Unidad de Medida del Documento y Trazos</label>
               <div class="unit-options-grid compact-grid">
@@ -1301,8 +1307,11 @@
               </div>
             </div>
 
-            <!-- Acceso Rápido / Instalación PWA -->
-            <div class="form-group" style="margin-top: 14px; margin-bottom: 0;">
+          </div>
+
+          <!-- Pestaña: Aplicación (instalación PWA) -->
+          <div class="settings-panel" role="tabpanel" data-settings-panel="app">
+            <div class="form-group" style="margin-bottom: 0;">
               <label>Acceso Rápido / Instalación</label>
               <div class="pwa-install-card">
                 <div class="pwa-install-header">
@@ -1325,8 +1334,8 @@
             </div>
           </div>
 
-          <!-- Columna Derecha: Lápiz Stylus y Almacenamiento -->
-          <div class="settings-col">
+          <!-- Pestaña: Lápiz y entrada táctil -->
+          <div class="settings-panel" role="tabpanel" data-settings-panel="input">
             <!-- Configuración de Lápiz Stylus y Rechazo de Palma -->
             <div class="form-group">
               <label>Entrada Táctil y Lápiz Stylus</label>
@@ -1343,10 +1352,46 @@
                   </label>
                 </div>
               </div>
+
+              <!-- Menú circular al mantener pulsado -->
+              <div class="stylus-setting-card" style="margin-top: 8px;">
+                <div class="stylus-setting-header">
+                  <div class="stylus-setting-icon">🎯</div>
+                  <div class="stylus-setting-info">
+                    <div class="stylus-setting-title">Menú Circular al Mantener Pulsado</div>
+                    <div class="stylus-setting-desc">Deja el lápiz o el dedo quieto sobre la hoja y aparece un círculo para cambiar rápido de herramienta y de color.</div>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="input-setting-radial-menu">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div class="radial-setting-options" id="radial-setting-options">
+                  <label class="radial-setting-row">
+                    <span>Se abre con</span>
+                    <select id="select-setting-radial-input" class="radial-setting-select">
+                      <option value="both">Lápiz y dedo</option>
+                      <option value="pen">Solo lápiz</option>
+                      <option value="finger">Solo dedo</option>
+                    </select>
+                  </label>
+                  <label class="radial-setting-row">
+                    <span>Tiempo de pulsación</span>
+                    <select id="select-setting-radial-delay" class="radial-setting-select">
+                      <option value="350">Corto (0,35 s)</option>
+                      <option value="500">Normal (0,5 s)</option>
+                      <option value="800">Largo (0,8 s)</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
             </div>
 
-            <!-- Carpeta de Almacenamiento Local (Tablet / Disco) -->
-            <div class="form-group" style="margin-top: 14px; margin-bottom: 0;">
+          </div>
+
+          <!-- Pestaña: Almacenamiento (carpeta local y respaldos) -->
+          <div class="settings-panel" role="tabpanel" data-settings-panel="storage">
+            <div class="form-group" style="margin-bottom: 0;">
               <label>Carpeta de Almacenamiento Local (Tablet / Disco)</label>
               <div class="storage-dir-card">
                 <div class="storage-dir-header">
@@ -1396,7 +1441,6 @@
               </div>
             </div>
           </div>
-        </div>
       </div>
 
       <div class="modal-footer modal-footer-settings">
@@ -2282,11 +2326,12 @@
   <!-- LÃ³gica de AplicaciÃ³n AutÃ³noma (JavaScript EstÃ¡ndar MonolÃ­tico 100% Offline) -->
 
   <!-- Worker de PDF.js Embebido en Memoria (Cero Dependencias Externas / 100% Offline Tablet) -->
-    <script src="libs/pdf.min.js?v=1.0.7"></script>
-  <script src="js/storage.js?v=1.0.7"></script>
-  <script src="js/canvas.js?v=1.0.7"></script>
-  <script src="js/pdf-viewer.js?v=1.0.7"></script>
-  <script src="js/app.js?v=1.0.7"></script>
+    <script src="libs/pdf.min.js?v=1.0.9"></script>
+  <script src="js/storage.js?v=1.0.9"></script>
+  <script src="js/canvas.js?v=1.0.9"></script>
+  <script src="js/radial-menu.js?v=1.0.9"></script>
+  <script src="js/pdf-viewer.js?v=1.0.9"></script>
+  <script src="js/app.js?v=1.0.9"></script>
   <script>
     if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
       window.addEventListener('load', () => {

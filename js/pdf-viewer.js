@@ -104,6 +104,136 @@ async function loadPdfEditor(pdfItem) {
   updateToolBadges();
 }
 
+// Capa nítida del PDF: con zoom por pellizco el render base (a 2×) se pixela, así que al parar
+// de hacer zoom o desplazarse se vuelve a renderizar solo la zona visible a la resolución real.
+const PDF_HD_MAX_PIXELS = 8000000;
+
+function attachPdfPageSharpener(page, renderCanvas, baseScale, rotation, getViewportEl) {
+  const abort = new AbortController();
+  let timer = null;
+  let task = null;
+  let layer = null;
+  let layerRect = null;
+  let layerK = 0;
+
+  function removeLayer() {
+    if (layer) layer.remove();
+    layer = null;
+    layerRect = null;
+    layerK = 0;
+  }
+
+  function cancelTask() {
+    if (task) {
+      try { task.cancel(); } catch (e) {}
+      task = null;
+    }
+  }
+
+  function destroy() {
+    clearTimeout(timer);
+    cancelTask();
+    removeLayer();
+    abort.abort();
+  }
+
+  async function update() {
+    if (!renderCanvas.isConnected) {
+      destroy();
+      return;
+    }
+    const cssW = parseFloat(renderCanvas.style.width) || 0;
+    const cssH = parseFloat(renderCanvas.style.height) || 0;
+    const cr = renderCanvas.getBoundingClientRect();
+    if (!cssW || !cssH || !cr.width) return;
+    const s = cr.width / cssW;
+    const wantK = s * (window.devicePixelRatio || 1);
+    const baseK = renderCanvas.width / cssW;
+    if (wantK <= baseK * 1.1) {
+      cancelTask();
+      removeLayer();
+      return;
+    }
+
+    const vpEl = getViewportEl();
+    const vr = vpEl ? vpEl.getBoundingClientRect() : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+    const vx0 = Math.max(0, (Math.max(vr.left, 0) - cr.left) / s);
+    const vy0 = Math.max(0, (Math.max(vr.top, 0) - cr.top) / s);
+    const vx1 = Math.min(cssW, (Math.min(vr.right, window.innerWidth) - cr.left) / s);
+    const vy1 = Math.min(cssH, (Math.min(vr.bottom, window.innerHeight) - cr.top) / s);
+    if (vx1 <= vx0 || vy1 <= vy0) {
+      // Página fuera de la vista: liberar memoria
+      cancelTask();
+      removeLayer();
+      return;
+    }
+
+    // Si la capa actual ya cubre lo visible a la misma resolución, no hace falta repintar
+    if (layerRect && Math.abs(layerK - wantK) / wantK < 0.08 &&
+        vx0 >= layerRect.x && vy0 >= layerRect.y &&
+        vx1 <= layerRect.x + layerRect.w && vy1 <= layerRect.y + layerRect.h) {
+      return;
+    }
+
+    const mx = (vx1 - vx0) * 0.25;
+    const my = (vy1 - vy0) * 0.25;
+    const x = Math.max(0, vx0 - mx);
+    const y = Math.max(0, vy0 - my);
+    const rect = { x, y, w: Math.min(cssW, vx1 + mx) - x, h: Math.min(cssH, vy1 + my) - y };
+    let k = wantK;
+    if (rect.w * rect.h * k * k > PDF_HD_MAX_PIXELS) k = Math.sqrt(PDF_HD_MAX_PIXELS / (rect.w * rect.h));
+    if (k <= baseK * 1.1) return;
+
+    // Renderizar en un lienzo nuevo y cambiarlo al terminar (sin parpadeo)
+    const next = document.createElement('canvas');
+    next.className = 'pdf-canvas-hd';
+    next.width = Math.max(1, Math.ceil(rect.w * k));
+    next.height = Math.max(1, Math.ceil(rect.h * k));
+    next.style.left = `${renderCanvas.offsetLeft + rect.x}px`;
+    next.style.top = `${renderCanvas.offsetTop + rect.y}px`;
+    next.style.width = `${next.width / k}px`;
+    next.style.height = `${next.height / k}px`;
+
+    cancelTask();
+    const myTask = page.render({
+      canvasContext: next.getContext('2d'),
+      viewport: page.getViewport({ scale: baseScale * k, rotation }),
+      transform: [1, 0, 0, 1, -rect.x * k, -rect.y * k]
+    });
+    task = myTask;
+    try {
+      await myTask.promise;
+    } catch (e) {
+      return; // cancelado por un zoom posterior
+    }
+    if (task !== myTask) return;
+    task = null;
+    if (!renderCanvas.isConnected) {
+      destroy();
+      return;
+    }
+    renderCanvas.parentNode.insertBefore(next, renderCanvas.nextSibling);
+    if (layer) layer.remove();
+    layer = next;
+    layerRect = rect;
+    layerK = k;
+  }
+
+  function schedule(delay = 220) {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      update();
+    }, delay);
+  }
+
+  document.addEventListener('scroll', () => schedule(), { capture: true, passive: true, signal: abort.signal });
+  window.addEventListener('ink-viewport-change', () => schedule(), { signal: abort.signal });
+  window.addEventListener('resize', () => schedule(), { signal: abort.signal });
+  schedule(400);
+  return { destroy, refresh: () => schedule(0) };
+}
+
 async function renderAllPdfPagesContinuous(pdfItem) {
   const stack = document.getElementById('pdf-pages-stack');
   stack.innerHTML = '';
@@ -175,6 +305,7 @@ async function renderAllPdfPagesContinuous(pdfItem) {
     } catch (renderErr) {
       console.warn(`Página ${pageNum} render notice:`, renderErr);
     }
+    attachPdfPageSharpener(page, renderCanvas, currentScale, totalRot, () => viewportContainer);
 
     // Margen Lateral Derecho si está configurado
     if (rightW > 0) {

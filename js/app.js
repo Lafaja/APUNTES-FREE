@@ -658,10 +658,46 @@ function openSettings() {
   const checkStylus = document.getElementById('input-setting-stylus-only');
   if (checkStylus) checkStylus.checked = !!(state.settings && state.settings.stylusOnly);
 
+  // Menú circular al mantener pulsado
+  const checkRadial = document.getElementById('input-setting-radial-menu');
+  const radialOpts = document.getElementById('radial-setting-options');
+  const selRadialInput = document.getElementById('select-setting-radial-input');
+  const selRadialDelay = document.getElementById('select-setting-radial-delay');
+  if (checkRadial) {
+    checkRadial.checked = !!(state.settings && state.settings.radialMenu);
+    const syncRadialOpts = () => {
+      if (radialOpts) radialOpts.classList.toggle('disabled', !checkRadial.checked);
+      if (selRadialInput) selRadialInput.disabled = !checkRadial.checked;
+      if (selRadialDelay) selRadialDelay.disabled = !checkRadial.checked;
+    };
+    checkRadial.onchange = syncRadialOpts;
+    syncRadialOpts();
+  }
+  if (selRadialInput) selRadialInput.value = (state.settings && state.settings.radialMenuInput) || 'both';
+  if (selRadialDelay) selRadialDelay.value = String((state.settings && state.settings.radialMenuDelay) || 500);
+
+  showSettingsTab(state.settingsTab || 'document');
   updateSettingsPreview(curUnit);
   updateStorageDirUI();
   actualizarBotonInstalacion(!!deferredPrompt);
   modal.classList.add('open');
+}
+
+function showSettingsTab(tab) {
+  const modal = document.getElementById('modal-settings');
+  if (!modal) return;
+  if (!modal.querySelector(`[data-settings-panel="${tab}"]`)) tab = 'document';
+  state.settingsTab = tab;
+  modal.querySelectorAll('[data-settings-tab]').forEach(btn => {
+    const on = btn.dataset.settingsTab === tab;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  modal.querySelectorAll('[data-settings-panel]').forEach(panel => {
+    panel.classList.toggle('active', panel.dataset.settingsPanel === tab);
+  });
+  const body = modal.querySelector('.settings-tablet-body');
+  if (body) body.scrollTop = 0;
 }
 
 function closeSettings() {
@@ -683,6 +719,10 @@ function initSettingsModalEvents() {
   if (btnInstalarApp) {
     btnInstalarApp.onclick = triggerPwaInstall;
   }
+
+  modal.querySelectorAll('[data-settings-tab]').forEach(btn => {
+    btn.onclick = () => showSettingsTab(btn.dataset.settingsTab);
+  });
 
   document.querySelectorAll('input[name="setting-unit"]').forEach(r => {
     r.onchange = (e) => {
@@ -824,6 +864,12 @@ function initSettingsModalEvents() {
       if (checkStylus) {
         state.settings.stylusOnly = checkStylus.checked;
       }
+      const checkRadial = document.getElementById('input-setting-radial-menu');
+      if (checkRadial) state.settings.radialMenu = checkRadial.checked;
+      const selRadialInput = document.getElementById('select-setting-radial-input');
+      if (selRadialInput) state.settings.radialMenuInput = selRadialInput.value;
+      const selRadialDelay = document.getElementById('select-setting-radial-delay');
+      if (selRadialDelay) state.settings.radialMenuDelay = parseInt(selRadialDelay.value, 10) || 500;
       saveUserSettings();
       updateStylusModeUI();
       updateAllMeasurementLabels();
@@ -2222,6 +2268,7 @@ function loadNoteEditor(noteItem) {
       const currentZoom = Math.min(3.5, Math.max(0.5, noteItem.viewport.zoom));
       if (container) {
         container.style.transform = `scale(${currentZoom})`;
+        if (typeof notifyInkViewportChange === 'function') notifyInkViewportChange();
         container.style.transformOrigin = '0 0';
       }
       state.notes.scale = currentZoom;
@@ -5262,249 +5309,25 @@ const panels = {
   }
 };
 
-// 2. DIBUJADO MODULAR Y PURO EN CONTEXTO 2D
-function dibujarImagenEnContexto(ctx, s) {
-  if (!s || !ctx) return;
-  const src = s.src || s.dataUrl;
-  if (!src) return;
-
-  let img = s.element;
-  if (!img || !(img instanceof HTMLImageElement)) {
-    img = globalImageCache.get(src);
-    if (!img) {
-      img = new Image();
-      img.src = src;
-      globalImageCache.set(src, img);
-    }
-    s.element = img;
-  }
-
-  if (img.complete && img.naturalWidth > 0) {
-    syncImageStroke(s, img);
-    ctx.save();
-    ctx.drawImage(img, s.x, s.y, s.width, s.height);
-    ctx.restore();
-  } else if (!img.onload) {
-    img.onload = () => {
-      syncImageStroke(s, img);
-      if (state.currentView === 'split-editor') {
-        redrawPanel('left');
-        redrawPanel('right');
-      } else if (noteDrawingEngine) {
-        noteDrawingEngine.redraw();
-      }
-    };
-  }
-}
-
-function dibujarTrazoEnContexto(ctx, s) {
-  if (!s || !ctx || s.tool === 'eraser' || s.isImage) return;
-  if (!s.points || s.points.length === 0) return;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  const brush = s.brushType || s.tool;
-
-  // Relleno de Formas si aplica
-  if (s.isShape && (s.fillMode === 'semi' || s.fillMode === 'solid')) {
-    ctx.fillStyle = s.fillColor || s.color;
-    ctx.globalAlpha = s.fillMode === 'semi' ? 0.35 : (s.opacity || 1.0);
-    ctx.moveTo(s.points[0].x, s.points[0].y);
-    for (let i = 1; i < s.points.length; i++) {
-      ctx.lineTo(s.points[i].x, s.points[i].y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-  }
-
-  // Relleno por Bote de Pintura
-  if (s.isFill) {
-    ctx.fillStyle = s.fillColor || s.color;
-    ctx.globalAlpha = s.fillOpacity || 1.0;
-    ctx.moveTo(s.points[0].x, s.points[0].y);
-    for (let i = 1; i < s.points.length; i++) {
-      ctx.lineTo(s.points[i].x, s.points[i].y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-
-  // Estilos de pincel y grosor
-  if (brush === 'highlighter' || s.tool === 'highlighter') {
-    ctx.strokeStyle = s.color;
-    ctx.globalAlpha = 0.45;
-    ctx.lineWidth = (s.size || 6) * 3.2;
-  } else if (brush === 'pencil') {
-    ctx.strokeStyle = s.color;
-    ctx.globalAlpha = 0.65;
-    ctx.lineWidth = s.size || 2;
-  } else if (brush === 'fountain') {
-    ctx.strokeStyle = s.color;
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = (s.size || 3) * 1.25;
-  } else {
-    ctx.strokeStyle = s.color || '#0f172a';
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = s.size || 3;
-  }
-
-  const pts = s.points;
-  if (pts.length === 1) {
-    ctx.arc(pts[0].x, pts[0].y, (s.size || 3) / 2, 0, Math.PI * 2);
-    ctx.fillStyle = s.color || '#0f172a';
-    ctx.fill();
-  } else if (s.isShape) {
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y);
-    }
-    ctx.stroke();
-  } else if (pts.length === 2) {
-    ctx.moveTo(pts[0].x, pts[0].y);
-    ctx.lineTo(pts[1].x, pts[1].y);
-    ctx.stroke();
-  } else {
-    // Curvas Bézier cuadráticas ultrasuaves con puntos medios
-    ctx.moveTo(pts[0].x, pts[0].y);
-    const mid0 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-    ctx.lineTo(mid0.x, mid0.y);
-    for (let i = 1; i < pts.length - 1; i++) {
-      const xc = (pts[i].x + pts[i + 1].x) / 2;
-      const yc = (pts[i].y + pts[i + 1].y) / 2;
-      ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-    }
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-// 3. AISLAMIENTO DEL CICLO DE DIBUJO Y REPINTADO POR PANEL
+// 2. REPINTADO POR PANEL (cada panel usa su propio motor de dibujo)
 function redrawPanel(side) {
-  const p = panels[side];
-  if (!p || !p.canvas || !p.ctx) return;
-  const dpr = Math.max(window.devicePixelRatio || 1, 2);
-  p.ctx.setTransform(1, 0, 0, 1, 0, 0);
-  p.ctx.clearRect(0, 0, p.canvas.width, p.canvas.height);
-  p.ctx.scale(dpr, dpr);
-
-  // 1. Dibujar ÚNICAMENTE las imágenes de este lado
-  const images = p.images || [];
-  for (const img of images) {
-    dibujarImagenEnContexto(p.ctx, img);
-  }
-
-  // 2. Dibujar ÚNICAMENTE los trazos de este lado
-  const strokes = p.strokes || [];
-  for (const stroke of strokes) {
-    dibujarTrazoEnContexto(p.ctx, stroke);
-  }
-
-  // 3. Dibujar el trazo en progreso de este lado
-  if (p.isDrawing && p.currentStroke) {
-    dibujarTrazoEnContexto(p.ctx, p.currentStroke);
-  }
+  const engine = side === 'left' ? state.split.leftEngine : state.split.rightEngine;
+  if (engine && typeof engine.redraw === 'function') engine.redraw();
 }
 
-// Historial Undo / Redo independiente por panel
-function pushPanelUndo(side) {
-  const p = panels[side];
-  if (!p || !p.doc) return;
-  if (!Array.isArray(p.undoStack)) p.undoStack = [];
-  p.redoStack = [];
-  const snapshot = {
-    strokes: JSON.parse(JSON.stringify(p.strokes || [])),
-    images: (p.images || []).map(img => {
-      const { element, ...rest } = img;
-      return JSON.parse(JSON.stringify(rest));
-    })
-  };
-  p.undoStack.push(snapshot);
-  if (p.undoStack.length > 50) p.undoStack.shift();
-  p.doc.undoStack = p.undoStack;
-  p.doc.redoStack = p.redoStack;
-}
-
+// Historial Undo / Redo independiente por panel (el del propio documento)
 function performPanelUndo(side) {
-  const p = panels[side];
-  if (!p || !p.undoStack || p.undoStack.length === 0) return;
-  if (!Array.isArray(p.redoStack)) p.redoStack = [];
-
-  const currentSnapshot = {
-    strokes: JSON.parse(JSON.stringify(p.strokes || [])),
-    images: (p.images || []).map(img => {
-      const { element, ...rest } = img;
-      return JSON.parse(JSON.stringify(rest));
-    })
-  };
-  p.redoStack.push(currentSnapshot);
-
-  const prev = p.undoStack.pop();
-  if (prev) {
-    p.strokes = p.doc.strokes = prev.strokes || [];
-    p.images = p.doc.images = prev.images || [];
-    ensureDocImagesLoaded(p.doc);
-    dbSaveItem(p.doc);
-    redrawPanel(side);
-  }
+  const doc = side === 'left' ? state.split.leftDoc : state.split.rightDoc;
+  if (!doc) return;
+  performUndo(doc);
+  redrawPanel(side);
 }
 
 function performPanelRedo(side) {
-  const p = panels[side];
-  if (!p || !p.redoStack || p.redoStack.length === 0) return;
-  if (!Array.isArray(p.undoStack)) p.undoStack = [];
-
-  const currentSnapshot = {
-    strokes: JSON.parse(JSON.stringify(p.strokes || [])),
-    images: (p.images || []).map(img => {
-      const { element, ...rest } = img;
-      return JSON.parse(JSON.stringify(rest));
-    })
-  };
-  p.undoStack.push(currentSnapshot);
-
-  const next = p.redoStack.pop();
-  if (next) {
-    p.strokes = p.doc.strokes = next.strokes || [];
-    p.images = p.doc.images = next.images || [];
-    ensureDocImagesLoaded(p.doc);
-    dbSaveItem(p.doc);
-    redrawPanel(side);
-  }
-}
-
-function eraseInPanel(pane, startPt, endPt) {
-  const p = panels[pane];
-  if (!p || !p.strokes) return;
-  const radius = (state.notes && state.notes.eraserSize ? state.notes.eraserSize / 2 : 12);
-  const radiusSq = radius * radius;
-  let modified = false;
-
-  const remainingStrokes = [];
-  for (const s of p.strokes) {
-    if (s.isImage) {
-      remainingStrokes.push(s);
-      continue;
-    }
-    const hit = s.points && s.points.some(pt => distSqToSegment(pt, startPt, endPt) <= radiusSq);
-    if (hit) {
-      modified = true;
-    } else {
-      remainingStrokes.push(s);
-    }
-  }
-
-  if (modified) {
-    p.strokes = p.doc.strokes = remainingStrokes;
-    dbSaveItem(p.doc);
-    redrawPanel(pane);
-  }
+  const doc = side === 'left' ? state.split.leftDoc : state.split.rightDoc;
+  if (!doc) return;
+  performRedo(doc);
+  redrawPanel(side);
 }
 
 function renderSplitNoteDividers(pane, inner, curH, pageHeight, isInfinite, paperSize) {
@@ -5547,319 +5370,37 @@ function renderSplitNoteDividers(pane, inner, curH, pageHeight, isInfinite, pape
   }
 }
 
-function setupSplitNotePanel(pane, doc, canvas, selCanvas, container, inner, curH, pageHeight, isInfinite, paperWidth, dpr) {
+function setupSplitNotePanel(pane, doc, canvas, selCanvas, container, inner, onExtend) {
   const p = panels[pane];
-  if (p.abortController) {
-    p.abortController.abort();
-  }
-  p.abortController = new AbortController();
-  const { signal } = p.abortController;
-
+  if (p.engine && typeof p.engine.destroy === 'function') p.engine.destroy();
   p.canvas = canvas;
   p.selCanvas = selCanvas;
-  p.ctx = canvas.getContext('2d');
-  p.selCtx = selCanvas.getContext('2d');
   p.doc = doc;
-  p.strokes = doc.strokes = Array.isArray(doc.strokes) ? doc.strokes : [];
-  p.images = doc.images = Array.isArray(doc.images) ? doc.images : [];
-  p.undoStack = doc.undoStack = Array.isArray(doc.undoStack) ? doc.undoStack : [];
-  p.redoStack = doc.redoStack = Array.isArray(doc.redoStack) ? doc.redoStack : [];
-  p.isDrawing = false;
-  p.currentStroke = null;
   p.container = container;
+  if (!Array.isArray(doc.strokes)) doc.strokes = [];
+  if (!Array.isArray(doc.images)) doc.images = [];
 
-  const maxSafeHeight = 80000;
-  let currentHeight = curH;
-  let isExpanding = false;
-
-  // Variables para desplazamiento táctil suave / inercia en este panel
-  let isSingleTouchPanning = false;
-  let lastTouchPos = { x: 0, y: 0 };
-  let touchVelocityX = 0;
-  let touchVelocityY = 0;
-  let lastTouchTime = 0;
-  let momentumAnimId = null;
-  const activeTouches = new Map();
-  let isPinchingOrPanning = false;
-  let initialPinchDist = 0;
-  let initialPinchZoom = 1.0;
-  let lastPinchCenter = { x: 0, y: 0 };
-
-  function stopMomentum() {
-    if (momentumAnimId) {
-      cancelAnimationFrame(momentumAnimId);
-      momentumAnimId = null;
-    }
-  }
-
-  function startMomentum() {
-    stopMomentum();
-    if (Math.abs(touchVelocityY) < 0.2 && Math.abs(touchVelocityX) < 0.2) return;
-    let vx = touchVelocityX;
-    let vy = touchVelocityY;
-    function step() {
-      vx *= 0.92;
-      vy *= 0.92;
-      container.scrollLeft -= vx;
-      container.scrollTop -= vy;
-      if (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1) {
-        momentumAnimId = requestAnimationFrame(step);
-      } else {
-        momentumAnimId = null;
-      }
-    }
-    momentumAnimId = requestAnimationFrame(step);
-  }
-
-  function expandPages() {
-    if (isExpanding || currentHeight + pageHeight > maxSafeHeight) return;
-    isExpanding = true;
-    currentHeight += pageHeight;
-    doc.canvasHeight = currentHeight;
-    canvas.height = Math.floor(currentHeight * dpr);
-    canvas.style.height = `${currentHeight}px`;
-    selCanvas.height = Math.floor(currentHeight * dpr);
-    selCanvas.style.height = `${currentHeight}px`;
-    inner.style.minHeight = `${currentHeight}px`;
-    inner.style.height = `${currentHeight}px`;
-    renderSplitNoteDividers(pane, inner, currentHeight, pageHeight, isInfinite, doc.paperSize);
-    redrawPanel(pane);
-    dbSaveItem(doc);
-    setTimeout(() => { isExpanding = false; }, 80);
-  }
-
-  // Helper para obtener coordenadas relativas exclusivamente al canvas de este panel
-  function getPanelPoint(e) {
-    const rect = canvas.getBoundingClientRect();
-    const cssWidth = parseFloat(canvas.style.width) || (rect.width > 0 ? (canvas.width / dpr) : canvas.width);
-    const cssHeight = parseFloat(canvas.style.height) || (rect.height > 0 ? (canvas.height / dpr) : canvas.height);
-    const scaleX = rect.width > 0 ? (cssWidth / rect.width) : 1;
-    const scaleY = rect.height > 0 ? (cssHeight / rect.height) : 1;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
-      pressure: (e.pressure !== undefined && e.pressure > 0) ? e.pressure : 0.5
-    };
-  }
-
-  // Pointer Down en el canvas de este panel
-  canvas.addEventListener('pointerdown', (e) => {
-    setActiveSplitPane(pane);
-
-    if (e.pointerType === 'touch') {
-      activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    }
-
-    stopMomentum();
-
-    // 1. Gestos de 2 dedos: Paneo y zoom con dos dedos en el panel
-    if (activeTouches.size >= 2) {
-      isSingleTouchPanning = false;
-      if (p.isDrawing || p.currentStroke) {
-        p.isDrawing = false;
-        p.currentStroke = null;
-        redrawPanel(pane);
-      }
-      isPinchingOrPanning = true;
-      const touches = Array.from(activeTouches.values());
-      const t1 = touches[0];
-      const t2 = touches[1];
-      initialPinchDist = Math.hypot(t2.x - t1.x, t2.y - t1.y) || 1;
-      initialPinchZoom = (pane === 'left' ? state.split.leftScale : state.split.rightScale) || 1.0;
-      lastPinchCenter = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
-      return;
-    }
-
-    const isTouchInput = e.pointerType === 'touch';
-    const isStylusOnlyMode = state.settings ? state.settings.stylusOnly !== false : true;
-    const isPanTool = (state.notes && state.notes.tool === 'pan');
-
-    // 2. Modo Desplazamiento Vertical con Dedo (Stylus Only o Herramienta Mano)
-    if ((isStylusOnlyMode && isTouchInput) || isPanTool) {
-      isSingleTouchPanning = true;
-      lastTouchPos = { x: e.clientX, y: e.clientY };
-      lastTouchTime = performance.now();
-      touchVelocityX = 0;
-      touchVelocityY = 0;
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch (err) {}
-      return;
-    }
-
-    if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
-
-    // 3. Modo Dibujo (Stylus activo o Dedo cuando stylusOnly está desactivado)
-    e.preventDefault();
-
-    try {
-      canvas.setPointerCapture(e.pointerId);
-    } catch (err) {}
-
-    const pt = getPanelPoint(e);
-
-    // MODO BORRADOR: Afecta ÚNICAMENTE a p.strokes de este panel
-    if (state.notes.tool === 'eraser') {
-      pushPanelUndo(pane);
-      p.isDrawing = true;
-      eraseInPanel(pane, pt, pt);
-      return;
-    }
-
-    // MODO DIBUJO: Empujar puntos ÚNICAMENTE a panels[pane].currentStroke
-    pushPanelUndo(pane);
-    p.isDrawing = true;
-    p.currentStroke = {
-      id: `s_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      tool: state.notes.tool,
-      brushType: state.notes.brushType || 'pen',
-      color: state.notes.color,
-      size: state.notes.size,
-      opacity: state.notes.opacity || 1.0,
-      points: [pt]
-    };
-
-    redrawPanel(pane);
-  }, { signal });
-
-  // Pointer Move en el canvas de este panel
-  canvas.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch' && activeTouches.has(e.pointerId)) {
-      activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    }
-
-    // Gestos de 2 dedos: Paneo y zoom
-    if (activeTouches.size >= 2) {
-      isSingleTouchPanning = false;
-      if (p.isDrawing || p.currentStroke) {
-        p.isDrawing = false;
-        p.currentStroke = null;
-        redrawPanel(pane);
-      }
-      isPinchingOrPanning = true;
-
-      const touches = Array.from(activeTouches.values());
-      const t1 = touches[0];
-      const t2 = touches[1];
-      const currentDist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
-      const currentCenter = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
-
-      const panDx = currentCenter.x - lastPinchCenter.x;
-      const panDy = currentCenter.y - lastPinchCenter.y;
-
-      let targetZoom = (pane === 'left' ? state.split.leftScale : state.split.rightScale) || 1.0;
-      if (initialPinchDist > 10 && currentDist > 10) {
-        const factor = currentDist / initialPinchDist;
-        targetZoom = Math.min(2.5, Math.max(0.4, initialPinchZoom * factor));
-      }
-
-      applyPaneZoom(pane, targetZoom, currentCenter, panDx, panDy);
-      lastPinchCenter = currentCenter;
-      return;
-    }
-
-    // Desplazamiento táctil fluido vertical/horizontal
-    if (isSingleTouchPanning) {
-      const now = performance.now();
-      const dt = Math.max(1, now - lastTouchTime);
-      const dx = e.clientX - lastTouchPos.x;
-      const dy = e.clientY - lastTouchPos.y;
-      lastTouchPos = { x: e.clientX, y: e.clientY };
-      lastTouchTime = now;
-
-      touchVelocityX = touchVelocityX * 0.35 + (dx / dt) * 16 * 0.65;
-      touchVelocityY = touchVelocityY * 0.35 + (dy / dt) * 16 * 0.65;
-
-      container.scrollLeft -= dx;
-      container.scrollTop -= dy;
-      return;
-    }
-
-    if (!p.isDrawing) return;
-
-    e.preventDefault();
-
-    const pt = getPanelPoint(e);
-
-    if (state.notes.tool === 'eraser') {
-      eraseInPanel(pane, pt, pt);
-      return;
-    }
-
-    if (p.currentStroke) {
-      const lastPt = p.currentStroke.points[p.currentStroke.points.length - 1];
-      if (!lastPt || Math.hypot(pt.x - lastPt.x, pt.y - lastPt.y) >= 0.5) {
-        p.currentStroke.points.push(pt);
-        redrawPanel(pane);
-      }
-    }
-  }, { signal });
-
-  // Pointer Up / Cancel en este panel
-  const stopPanelDrawing = (e) => {
-    if (e.pointerType === 'touch') {
-      activeTouches.delete(e.pointerId);
-    }
-
-    try {
-      if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
-        canvas.releasePointerCapture(e.pointerId);
-      }
-    } catch (err) {}
-
-    if (isSingleTouchPanning) {
-      isSingleTouchPanning = false;
-      startMomentum();
-      return;
-    }
-
-    if (activeTouches.size === 0) {
-      isPinchingOrPanning = false;
-    }
-
-    if (!p.isDrawing) return;
-    p.isDrawing = false;
-
-    if (p.currentStroke && p.currentStroke.points.length > 0) {
-      let maxY = 0;
-      for (const pt of p.currentStroke.points) {
-        if (pt.y > maxY) maxY = pt.y;
-      }
-
-      // Guardar trazo ÚNICAMENTE en panels[pane].strokes y doc.strokes
-      p.strokes.push(p.currentStroke);
-      p.doc.strokes = p.strokes;
-      p.currentStroke = null;
-
-      dbSaveItem(p.doc);
-
-      if (!isInfinite && maxY > currentHeight - 450) {
-        expandPages();
-      }
-    }
-
-    redrawPanel(pane);
-  };
-
-  canvas.addEventListener('pointerup', stopPanelDrawing, { signal });
-  canvas.addEventListener('pointercancel', stopPanelDrawing, { signal });
-  window.addEventListener('pointerup', stopPanelDrawing, { signal });
-  window.addEventListener('pointercancel', stopPanelDrawing, { signal });
-
-  redrawPanel(pane);
-
-  const engineObj = {
-    redraw: () => redrawPanel(pane),
-    destroy: () => {
-      stopMomentum();
-      p.abortController.abort();
-      p.isDrawing = false;
-      p.currentStroke = null;
-    }
-  };
-
-  p.engine = engineObj;
-  return engineObj;
+  // Mismo motor que las notas a pantalla completa: capa nítida con zoom, trazo en vivo y menú circular
+  p.engine = setupDrawingEngine(
+    canvas,
+    selCanvas,
+    () => doc.strokes || [],
+    (newStrokes, persist = true) => {
+      doc.strokes = newStrokes;
+      if (persist) dbSaveItem(doc);
+    },
+    onExtend,
+    container,
+    inner,
+    () => doc.images || [],
+    (newImages, persist = true) => {
+      doc.images = newImages;
+      if (persist) dbSaveItem(doc);
+    },
+    () => doc,
+    pane
+  );
+  return p.engine;
 }
 
 async function closeSplitView() {
@@ -5933,6 +5474,9 @@ async function closeSplitView() {
   panels.left = { canvas: null, selCanvas: null, ctx: null, selCtx: null, doc: null, strokes: [], images: [], undoStack: [], redoStack: [], isDrawing: false, currentStroke: null, abortController: null, scale: 1.0, container: null, engine: null };
   panels.right = { canvas: null, selCanvas: null, ctx: null, selCtx: null, doc: null, strokes: [], images: [], undoStack: [], redoStack: [], isDrawing: false, currentStroke: null, abortController: null, scale: 1.0, container: null, engine: null };
 
+  [state.split.leftEngine, state.split.rightEngine].forEach(eng => {
+    if (eng && typeof eng.destroy === 'function') eng.destroy();
+  });
   state.split.leftEngine = null;
   state.split.rightEngine = null;
 
@@ -5979,8 +5523,17 @@ async function openSplitViewWithDocs(leftDoc, rightDoc, sessionItem = null, rati
   }
 
   // CLONADO PROFUNDO PARA AISLAMIENTO TOTAL: si son el mismo documento, garantizar instancias separadas en memoria
-  let isolatedLeft = leftDoc ? JSON.parse(JSON.stringify(leftDoc)) : null;
-  let isolatedRight = rightDoc ? JSON.parse(JSON.stringify(rightDoc)) : null;
+  // (JSON convierte el binario del PDF en {}: se vuelve a enlazar el original, que nunca se modifica)
+  const cloneForPane = (d) => {
+    if (!d) return null;
+    const copy = JSON.parse(JSON.stringify(d));
+    if (d.pdfData && copy.pdfData && d.pdfData.arrayBuffer instanceof ArrayBuffer) {
+      copy.pdfData.arrayBuffer = d.pdfData.arrayBuffer;
+    }
+    return copy;
+  };
+  let isolatedLeft = cloneForPane(leftDoc);
+  let isolatedRight = cloneForPane(rightDoc);
 
   if (isolatedLeft) normalizeDocumentState(isolatedLeft);
   if (isolatedRight) normalizeDocumentState(isolatedRight);
@@ -6031,6 +5584,13 @@ async function mountPaneDocument(pane, doc, savedVp = null) {
     });
     return;
   }
+
+  // Destruir el motor anterior de este panel (listeners globales y capas)
+  const prevEngine = pane === 'left' ? state.split.leftEngine : state.split.rightEngine;
+  if (prevEngine && typeof prevEngine.destroy === 'function') prevEngine.destroy();
+  if (pane === 'left') state.split.leftEngine = null;
+  else state.split.rightEngine = null;
+  panels[pane].engine = null;
 
   // Foco automático en el panel al hacer clic o toque
   container.onpointerdown = () => {
@@ -6102,8 +5662,31 @@ async function mountPaneDocument(pane, doc, savedVp = null) {
     // Capa de divisores y numeración de hojas
     renderSplitNoteDividers(pane, inner, curHeight, pageHeight, isInfinite, doc.paperSize);
 
-    // Configurar motor de dibujo estrictamente aislado para este panel
-    const engine = setupSplitNotePanel(pane, doc, canvas, selCanvas, container, inner, curHeight, pageHeight, isInfinite, paperWidth, dpr);
+    // Añadir una hoja más al final del apunte de este panel
+    function growPane(force = false) {
+      if ((isInfinite && !force) || curHeight + pageHeight > maxSafeHeight) return false;
+      curHeight += pageHeight;
+      doc.canvasHeight = curHeight;
+      canvas.height = Math.floor(curHeight * dpr);
+      canvas.style.height = `${curHeight}px`;
+      selCanvas.height = Math.floor(curHeight * dpr);
+      selCanvas.style.height = `${curHeight}px`;
+      inner.style.minHeight = `${curHeight}px`;
+      inner.style.height = `${curHeight}px`;
+      renderSplitNoteDividers(pane, inner, curHeight, pageHeight, isInfinite, doc.paperSize);
+      redrawPanel(pane);
+      if (typeof notifyInkViewportChange === 'function') notifyInkViewportChange();
+      dbSaveItem(doc);
+      return true;
+    }
+
+    // Motor de dibujo de este panel (los trazos cerca del final añaden hoja)
+    const engine = setupSplitNotePanel(pane, doc, canvas, selCanvas, container, inner,
+      isInfinite ? null : (lowestY) => {
+        if (lowestY > curHeight - 450) growPane();
+      });
+    if (pane === 'left') state.split.leftEngine = engine;
+    else state.split.rightEngine = engine;
 
     // Auto-generación continua de hojas al hacer scroll en el panel
     let scrollRaf = null;
@@ -6112,29 +5695,15 @@ async function mountPaneDocument(pane, doc, savedVp = null) {
       if (scrollRaf !== null) return;
       scrollRaf = requestAnimationFrame(() => {
         scrollRaf = null;
-        if (!isExpanding && !isInfinite && (container.scrollTop + container.clientHeight >= container.scrollHeight - 500)) {
-          if (curHeight + pageHeight <= maxSafeHeight) {
+        if (!isExpanding && container.scrollTop + container.clientHeight >= container.scrollHeight - 500) {
+          if (growPane()) {
             isExpanding = true;
-            curHeight += pageHeight;
-            doc.canvasHeight = curHeight;
-            canvas.height = Math.floor(curHeight * dpr);
-            canvas.style.height = `${curHeight}px`;
-            selCanvas.height = Math.floor(curHeight * dpr);
-            selCanvas.style.height = `${curHeight}px`;
-            inner.style.minHeight = `${curHeight}px`;
-            inner.style.height = `${curHeight}px`;
-            renderSplitNoteDividers(pane, inner, curHeight, pageHeight, isInfinite, doc.paperSize);
-            redrawPanel(pane);
-            dbSaveItem(doc);
             setTimeout(() => { isExpanding = false; }, 80);
           }
         }
       });
     }, { passive: true });
     attachViewportTouchScroller(container);
-
-    if (pane === 'left') state.split.leftEngine = engine;
-    else state.split.rightEngine = engine;
 
     // Botón / Barra al pie del panel para añadir nueva página
     const addPageBar = document.createElement('div');
@@ -6150,17 +5719,7 @@ async function mountPaneDocument(pane, doc, savedVp = null) {
       addBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        curHeight += pageHeight;
-        doc.canvasHeight = curHeight;
-        canvas.height = Math.floor(curHeight * dpr);
-        canvas.style.height = `${curHeight}px`;
-        selCanvas.height = Math.floor(curHeight * dpr);
-        selCanvas.style.height = `${curHeight}px`;
-        inner.style.minHeight = `${curHeight}px`;
-        inner.style.height = `${curHeight}px`;
-        renderSplitNoteDividers(pane, inner, curHeight, pageHeight, isInfinite, doc.paperSize);
-        redrawPanel(pane);
-        dbSaveItem(doc);
+        if (!growPane(true)) return;
         setTimeout(() => {
           container.scrollTo({
             top: container.scrollHeight,
@@ -6203,7 +5762,10 @@ async function renderPdfInPane(pane, doc, container, savedVp = null) {
   setupPdfWorkerSrc(pdfLib);
 
   const rawData = (doc.pdfData && (doc.pdfData.arrayBuffer || doc.pdfData.base64 || doc.pdfData.data)) || doc.pdfData;
-  const dataCopy = normalizePdfBinaryData(rawData);
+  let dataCopy = normalizePdfBinaryData(rawData);
+  if ((!dataCopy || dataCopy.length === 0) && doc.pdfData && doc.pdfData.base64) {
+    dataCopy = normalizePdfBinaryData(doc.pdfData.base64);
+  }
   if (!dataCopy || dataCopy.length === 0) {
     container.innerHTML = '<div style="color:#ef4444; padding:30px; text-align:center;">No se pueden leer los datos binarios del archivo PDF.</div>';
     return;
@@ -6295,6 +5857,7 @@ async function renderPdfInPane(pane, doc, container, savedVp = null) {
       } catch (e) {
         console.warn(`Página split ${pageNum} render notice:`, e);
       }
+      attachPdfPageSharpener(page, renderCanvas, initScale, totalRot, () => container);
 
       if (rightW > 0) {
         const rightMarginEl = document.createElement('div');
@@ -6360,6 +5923,7 @@ async function renderPdfInPane(pane, doc, container, savedVp = null) {
     };
     if (pane === 'left') state.split.leftEngine = engineWrapper;
     else state.split.rightEngine = engineWrapper;
+    attachViewportTouchScroller(container);
 
     if (savedVp && (savedVp.scrollX || savedVp.scrollY)) {
       setTimeout(() => {
@@ -6415,7 +5979,7 @@ async function swapSplitPanes() {
 }
 
 function applyPaneZoom(pane, scale, focalPoint = null, panDx = 0, panDy = 0) {
-  scale = Math.max(0.4, Math.min(2.5, scale));
+  scale = Math.max(0.4, Math.min(3.5, scale));
   const prevScale = (pane === 'left' ? state.split.leftScale : state.split.rightScale) || 1.0;
   if (pane === 'left') state.split.leftScale = scale;
   else state.split.rightScale = scale;
@@ -6435,11 +5999,13 @@ function applyPaneZoom(pane, scale, focalPoint = null, panDx = 0, panDy = 0) {
       const zoomDeltaY = (focalPoint.y - innerRect.top) * (zoomRatio - 1);
       inner.style.transformOrigin = '0 0';
       inner.style.transform = `scale(${scale})`;
+      if (typeof notifyInkViewportChange === 'function') notifyInkViewportChange();
       container.scrollLeft += zoomDeltaX - panDx;
       container.scrollTop += zoomDeltaY - panDy;
     } else {
       inner.style.transformOrigin = '0 0';
       inner.style.transform = `scale(${scale})`;
+      if (typeof notifyInkViewportChange === 'function') notifyInkViewportChange();
     }
   }
 }
