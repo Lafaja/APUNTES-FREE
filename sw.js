@@ -1,5 +1,5 @@
 // Service Worker - Tablet Studio PWA (Cache-First / 100% Offline Resilience)
-const CACHE_NAME = 'tablet-studio-v1.0.10';
+const CACHE_NAME = 'tablet-studio-v1.0.11';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -40,7 +40,8 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          // Ojo: en el mismo dominio (lafaja.github.io) está la V2 con sus propias cachés: no tocarlas.
+          if (key !== CACHE_NAME && !key.startsWith('tablet-studio-v2-')) {
             console.log('[SW] Eliminando caché antigua:', key);
             return caches.delete(key);
           }
